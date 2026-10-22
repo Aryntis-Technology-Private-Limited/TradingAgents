@@ -51,6 +51,25 @@ def test_rate_limit_detected(monkeypatch):
 
 
 @pytest.mark.unit
+def test_premium_gate_is_not_mislabeled_as_rate_limit(monkeypatch):
+    # A free key hitting a premium endpoint (e.g. NEWS_SENTIMENT) gets a
+    # "premium endpoint" notice. It must surface as a premium error, not a
+    # transient rate limit, which would imply a retry will succeed.
+    body = ('{"Information": "Thank you for using Alpha Vantage! This is a premium '
+            'endpoint. You may subscribe to any of the premium plans at "}')
+    monkeypatch.setattr(net.requests, "get", _patched_get(body))
+    with pytest.raises(av.AlphaVantagePremiumError) as raised:
+        av._make_api_request("NEWS_SENTIMENT", {"tickers": "AAPL"})
+    # Still a VendorUnavailableError so the router skips to the next vendor.
+    from tradingagents.dataflows.errors import VendorUnavailableError
+    assert isinstance(raised.value, VendorUnavailableError)
+    # A genuine rate limit is a different error.
+    monkeypatch.setattr(net.requests, "get", _patched_get('{"Note": "API call frequency is 5 calls per minute."}'))
+    with pytest.raises(av.AlphaVantageRateLimitError):
+        av._make_api_request("NEWS_SENTIMENT", {"tickers": "AAPL"})
+
+
+@pytest.mark.unit
 def test_invalid_key_not_mislabeled_as_rate_limit(monkeypatch):
     # AV's invalid-key notice mentions "API key"; it must NOT be treated as a
     # (transient) rate limit, but surface as a real configuration error (#991).

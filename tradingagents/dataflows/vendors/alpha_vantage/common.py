@@ -67,6 +67,18 @@ class AlphaVantageRateLimitError(VendorUnavailableError):
     pass
 
 
+class AlphaVantagePremiumError(VendorUnavailableError):
+    """Raised when Alpha Vantage gates the requested endpoint behind a paid plan.
+
+    A free-tier key calling a premium endpoint (e.g. NEWS_SENTIMENT) gets a
+    "This is a premium endpoint" notice. That is a hard entitlement gap, not a
+    transient throttle: retrying with a free key will never succeed, so the
+    message must say so rather than misreading it as a rate limit that will
+    clear. The router still skips to the next vendor (VendorUnavailableError).
+    """
+    pass
+
+
 def _make_api_request(function_name: str, params: dict) -> dict | str:
     """Helper function to make API requests and handle responses.
 
@@ -117,7 +129,13 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
     if notice:
         notice = scrubbed(notice)
         low = notice.lower()
-        if any(m in low for m in ("rate limit", "requests per day", "call frequency", "premium")):
+        # A premium gate is an entitlement problem, not a throttle: a free key
+        # will fail it forever, so label it as such rather than "rate limit"
+        # which implies it will clear on retry. Checked before the rate-limit
+        # phrasing because AV's upgrade notices also mention the plan.
+        if "premium" in low:
+            raise AlphaVantagePremiumError(f"Alpha Vantage endpoint requires a premium plan: {notice}")
+        if any(m in low for m in ("rate limit", "requests per day", "call frequency")):
             raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {notice}")
         if "api key" in low or "apikey" in low:
             # Reuse the existing "not configured" error so a bad key surfaces as

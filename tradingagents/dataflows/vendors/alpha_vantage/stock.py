@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from tradingagents.dataflows.symbols import normalize_symbol, to_alpha_vantage_symbol
 from tradingagents.dataflows.vendors.alpha_vantage.common import (
     _filter_csv_by_date_range,
     _make_api_request,
@@ -31,8 +32,13 @@ def get_stock(
     days_from_today_to_start = (today - start_dt).days
     outputsize = "compact" if days_from_today_to_start < 100 else "full"
 
+    # Rewrite the Yahoo-canonical symbol to AV's preferred spelling before
+    # querying; NSE-listed Indian stocks use .BO in AV, not .NS.
+    canonical = normalize_symbol(symbol)
+    av_symbol = to_alpha_vantage_symbol(canonical)
+
     params = {
-        "symbol": symbol,
+        "symbol": av_symbol,
         "outputsize": outputsize,
         "datatype": "csv",
     }

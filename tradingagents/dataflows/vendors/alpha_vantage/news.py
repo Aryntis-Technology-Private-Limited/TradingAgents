@@ -1,6 +1,7 @@
 
 from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.date_window import withhold_undisclosed_trades
+from tradingagents.dataflows.symbols import normalize_symbol, to_alpha_vantage_symbol
 from tradingagents.dataflows.vendors.alpha_vantage.common import (
     _make_api_request,
     format_datetime_for_api,
@@ -21,10 +22,15 @@ def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
         Dictionary containing news sentiment data or JSON string.
     """
 
+    # Rewrite the Yahoo-canonical symbol to AV's preferred spelling before
+    # querying; NSE-listed Indian stocks use .BO in AV, not .NS.
+    canonical = normalize_symbol(ticker)
+    av_symbol = to_alpha_vantage_symbol(canonical)
+
     # Without a limit the endpoint returns 50 articles, each with per-ticker
     # sentiment arrays, and all of it reaches the prompt.
     params = {
-        "tickers": ticker,
+        "tickers": av_symbol,
         "time_from": format_datetime_for_api(start_date),
         "time_to": format_datetime_for_api(end_date, end_of_day=True),
         "limit": str(get_config()["news_article_limit"]),

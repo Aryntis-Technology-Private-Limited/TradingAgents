@@ -144,6 +144,37 @@ def normalize_symbol(raw: str) -> str:
     return canonical
 
 
+# Alpha Vantage's exchange-suffix conventions differ from Yahoo's. For
+# BSE-listed Indian stocks, AV indexes them under the .BO suffix, but Yahoo
+# wants .NS. This map rewrites Yahoo .NS to AV .BO (BSE-listed preferred).
+# NSE-only tickers that AV does not index will still produce an AV error
+# message, which the router handles via VendorUnavailableError.
+_AV_SUFFIX_MAP = {".NS": ".BO"}
+
+
+def to_alpha_vantage_symbol(yahoo_symbol: str) -> str:
+    """Rewrite a Yahoo-canonical symbol to the spelling Alpha Vantage expects.
+
+    Purely syntactic — no network call. US tickers are unchanged. For
+    BSE-listed Indian stocks the .NS suffix is rewritten to .BO, which is
+    AV's preferred spelling. NSE-only tickers not on BSE may not be
+    indexed by AV; the router's VendorUnavailableError degradation handles
+    that gracefully.
+
+    Examples:
+        RELIANCE.NS  -> RELIANCE.BO
+        TCS.NS       -> TCS.BO
+        AAPL         -> AAPL
+    """
+    if not isinstance(yahoo_symbol, str) or not yahoo_symbol:
+        return yahoo_symbol
+    s = yahoo_symbol.upper()
+    for yahoo_suffix, av_suffix in _AV_SUFFIX_MAP.items():
+        if s.endswith(yahoo_suffix):
+            return s[: -len(yahoo_suffix)] + av_suffix
+    return s
+
+
 # Tickers can contain letters, digits, dot, dash, underscore, caret
 # (index symbols like ^GSPC), equals (futures like GC=F), and plus
 # (forex/CFD symbols like XAUUSD+). None of these enable directory
