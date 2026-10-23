@@ -4,12 +4,16 @@
 #   docker compose -f scripts/daily_report/docker-compose.yml up -d
 #
 # The container stays up as a thin "cron gate": it runs the daily report at
-# 08:00 (server local time — the target box is on Asia/Kolkata, so that is
-# 08:00 IST, pre-open, capturing the full previous trading session) on every
-# day that is NOT a public holiday-ish no-op. The gate itself does not know
-# about market closures; it runs daily and the run is cheap when data is
-# unchanged. To stop the schedule at 2027-01-01, the container exits by
-# itself when the date passes the DAILY_REPORT_UNTIL env var.
+# 02:00 (server local time — the target box is on Asia/Kolkata, so that is
+# 02:00 IST, after the full previous trading session has closed at 15:30 IST
+# and a ~3-hour sweep finishes well before the 09:15 IST market open) on
+# every weekday. The gate skips Sat/Sun; public holidays are not tracked —
+# a report on a holiday just re-prices the last session's data. To stop the
+# schedule at 2027-01-01, the container exits by itself when the date passes
+# the DAILY_REPORT_UNTIL env var.
+#
+# Retention: the runner deletes previous days' report folders at the start of
+# each run (no archive is kept), so the volume holds at most today's reports.
 #
 # Reports land in the named volume at /home/appuser/.tradingagents/reports/daily/
 # On the host that volume is at:
@@ -18,7 +22,7 @@
 
 services:
   daily-report:
-    build: ..
+    build: ../..
     image: tradingagents-daily:local
     container_name: tradingagents-daily-report
     # Replace the interactive CLI entrypoint with the daily-fire gate.
@@ -28,15 +32,16 @@ services:
     entrypoint: ["/bin/sh", "-c",
       "cd /home/appuser/app && exec python -m scripts.daily_report.cron_gate"]
     env_file:
-      - ../.env
+      - ../../.env
     environment:
       - TRADINGAGENTS_IN_DOCKER=1
       - TRADINGAGENTS_RESULTS_DIR=/home/appuser/.tradingagents/logs
       # The gate's stop date: it will run every day until this date (inclusive),
       # then exit so the container stops rescheduling itself.
       - DAILY_REPORT_UNTIL=${DAILY_REPORT_UNTIL:-2027-01-01}
-      # The hour (24h, server-local time) the report fires. Default 08:00 IST.
-      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-8}
+      # The hour (24h, server-local time) the report fires. Default 02:00 IST
+      # so the ~3h sweep finishes well before market open (09:15 IST).
+      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-2}
       # 1 = the container waits for the first run immediately on startup;
       # 0 = only fire on the schedule. Default 1 so a manual `up -d` today
       # still produces today's report.

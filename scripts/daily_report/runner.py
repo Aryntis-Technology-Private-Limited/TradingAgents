@@ -12,6 +12,9 @@ Behavior:
   skipped (idempotent re-runs pick up where the last one stopped).
 - Writes per-ticker complete_report.md + complete_report.html under
   ``<results_dir>/daily/<YYYY-MM-DD>/<TICKER>/``.
+- Retention: date folders older than today are deleted at the start of the
+  run (no archive is kept), so the volume holds at most the current day's
+  reports.
 - One ticker failure never stops the sweep (same contract as the backtest
   sweep in tradingagents/backtest.py).
 
@@ -23,6 +26,7 @@ Exit codes:
 from __future__ import annotations
 
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -56,11 +60,32 @@ def _today_dir(out_root: Path) -> tuple[str, Path]:
     return today, out_root / today
 
 
+def _prune_old_daily(daily_root: Path, today: str) -> list[str]:
+    """Delete every dated folder under ``daily_root`` that is not today's.
+
+    No archive is kept: the volume holds at most the current day's reports.
+    Only folders whose name is a valid ``YYYY-MM-DD`` are touched, so a
+    stray non-date entry is never deleted. Returns the pruned folder names.
+    """
+    pruned: list[str] = []
+    if not daily_root.is_dir():
+        return pruned
+    for child in daily_root.iterdir():
+        if child.is_dir() and child.name != today and re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name):
+            shutil.rmtree(child)
+            pruned.append(child.name)
+    return pruned
+
+
 def run() -> int:
     config = config_module.build_default_config()
     results_dir = Path(config["results_dir"])
     today, out_dir = _today_dir(results_dir / "daily")
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    pruned = _prune_old_daily(out_dir.parent, today)
+    if pruned:
+        print(f"[daily-report] pruned old daily folders (no archive): {', '.join(pruned)}", flush=True)
 
     lists = both()
     tickers = lists["nifty50"] + lists["sensex"]

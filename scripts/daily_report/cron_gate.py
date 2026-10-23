@@ -11,7 +11,7 @@ daemon, it restarts with the container, and the stop date is enforced in code
 rather than as a cron line that could outlive the intended end date.
 
 Environment (all optional, defaults shown):
-    DAILY_REPORT_HOUR         hour in 0-23, server-local (default 8)
+    DAILY_REPORT_HOUR         hour in 0-23, server-local (default 2)
     DAILY_REPORT_UNTIL        YYYY-MM-DD inclusive stop date (default 2027-01-01)
     DAILY_REPORT_RUN_ON_STARTUP   "1"/"0": fire once immediately on start (default 1)
 
@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _hour() -> int:
-    raw = os.environ.get("DAILY_REPORT_HOUR", "8").strip()
+    raw = os.environ.get("DAILY_REPORT_HOUR", "2").strip()
     try:
         value = int(raw)
     except ValueError:
