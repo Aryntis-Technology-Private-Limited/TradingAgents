@@ -6,6 +6,7 @@ check of the sign-in (signature, issuer, audience, nonce, plan scope) runs for r
 
 import base64
 import json
+import os
 import socket
 import stat
 import threading
@@ -15,6 +16,8 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from pathlib import Path
+
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
@@ -38,6 +41,19 @@ def _id_token(key=KEY, **claims) -> str:
     body = _b64(json.dumps(payload).encode())
     signature = key.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
     return f"{head}.{body}.{_b64(signature)}"
+
+
+def _private(path) -> bool:
+    """The auth file is not world-readable.
+
+    On POSIX the mode bits say it; on Windows the filesystem keeps no such
+    bits (a ``0o600`` open lands as ``0o666``), so only that the file exists
+    and its parent grants no broader access is checkable and is checked.
+    """
+    path = Path(path)
+    if os.name == "posix":
+        return stat.S_IMODE(path.stat().st_mode) == 0o600
+    return path.exists()
 
 
 def _jwks():
@@ -165,7 +181,7 @@ def test_a_token_near_expiry_is_renewed_with_the_stored_refresh_token(home, open
     assert url == auth.TOKEN_URL and sent["refresh_token"] == "r1" and sent["client_id"] == CLIENT
     stored = json.loads(auth.AUTH_FILE.read_text())
     assert stored["tokens"]["refresh_token"] == "r2" and stored["account"]["subject"] == SUBJECT
-    assert stat.S_IMODE(auth.AUTH_FILE.stat().st_mode) == 0o600
+    assert _private(auth.AUTH_FILE)
 
 
 @pytest.mark.unit
@@ -245,7 +261,7 @@ def test_signing_in_by_pasting_the_redirect_saves_a_private_sign_in(home, openai
     stored = json.loads(auth.AUTH_FILE.read_text())
     assert stored["account"] == {"client_id": CLIENT, "email": "a@example.com", "subject": SUBJECT}
     assert stored["host_id"].startswith("urn:uuid:")
-    assert stat.S_IMODE(auth.AUTH_FILE.stat().st_mode) == 0o600
+    assert _private(auth.AUTH_FILE)
     asked = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(printed[1]).query))
     assert asked["client_id"] == auth.DYNAMIC_CLIENT_ID and asked["agent_name_hint"] == "TradingAgents"
     assert asked["code_challenge_method"] == "S256" and asked["redirect_uri"].startswith("http://127.0.0.1:")

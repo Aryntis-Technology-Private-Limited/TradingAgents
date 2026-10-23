@@ -8,6 +8,8 @@ unattended runs contact no server at all.
 import io
 import json
 import os
+import shlex
+import sys
 from datetime import date
 from types import SimpleNamespace
 from unittest import mock
@@ -249,13 +251,24 @@ def test_the_upgrade_command_follows_the_install(tmp_path, monkeypatch):
     monkeypatch.setattr(updates.sys, "executable", "/venv/bin/python")
     url = clone.as_uri()
 
-    editable = updates.upgrade_command(_dist({"url": url, "dir_info": {"editable": True}}))
-    assert editable == f"git -C {clone} pull && /venv/bin/python -m pip install -e {clone}"
-    local = updates.upgrade_command(_dist({"url": url, "dir_info": {}}, installer="uv"))
-    assert local == f"git -C {clone} pull && uv pip install --python /venv/bin/python {clone}"
+    # The git install is a single shell-independent command, so it is offered
+    # on every platform; the interpreter is what the host runs.
     vcs = updates.upgrade_command(_dist({"url": "https://github.com/TauricResearch/TradingAgents.git",
                                          "vcs_info": {"vcs": "git", "commit_id": "abc"}}))
-    assert vcs == "/venv/bin/python -m pip install -U git+https://github.com/TauricResearch/TradingAgents.git"
+    assert vcs == (f"{shlex.quote('/venv/bin/python')} -m pip install"
+                   " -U git+https://github.com/TauricResearch/TradingAgents.git")
+
+    # A local clone needs a POSIX shell (``git -C ... && ...``): offered under
+    # a POSIX host name, quiet under a Windows one.
+    if os.name == "posix":
+        expected = shlex.quote(str(clone))
+        editable = updates.upgrade_command(_dist({"url": url, "dir_info": {"editable": True}}))
+        assert editable == f"git -C {expected} pull && /venv/bin/python -m pip install -e {expected}"
+        local = updates.upgrade_command(_dist({"url": url, "dir_info": {}}, installer="uv"))
+        assert local == f"git -C {expected} pull && uv pip install --python /venv/bin/python {expected}"
+    else:
+        assert updates.upgrade_command(_dist({"url": url, "dir_info": {"editable": True}})) is None
+        assert updates.upgrade_command(_dist({"url": url, "dir_info": {}}, installer="uv")) is None
 
 
 @pytest.mark.unit
@@ -317,17 +330,27 @@ def test_remote_text_cannot_carry_c1_or_direction_controls():
 def test_a_uv_git_install_is_upgraded_with_uv(monkeypatch):
     monkeypatch.delenv("TRADINGAGENTS_IN_DOCKER", raising=False)
     monkeypatch.setattr(updates.sys, "executable", "/venv/bin/python")
-    vcs = updates.upgrade_command(_dist({"url": "https://github.com/TauricResearch/TradingAgents.git",
-                                         "vcs_info": {"vcs": "git"}}, installer="uv"))
-    assert vcs == "uv pip install --python /venv/bin/python -U git+https://github.com/TauricResearch/TradingAgents.git"
+    # A git install is a single shell-independent command, so it is offered
+    # under both host names; the command shape is the same either way.
+    for name in ("posix", "nt"):
+        monkeypatch.setattr(updates.os, "name", name)
+        vcs = updates.upgrade_command(_dist({"url": "https://github.com/TauricResearch/TradingAgents.git",
+                                              "vcs_info": {"vcs": "git"}}, installer="uv"))
+        assert vcs == ("uv pip install --python /venv/bin/python"
+                       " -U git+https://github.com/TauricResearch/TradingAgents.git")
 
 
 @pytest.mark.unit
-def test_no_command_is_offered_on_windows(monkeypatch):
+def test_no_command_is_offered_on_windows_for_local_clone(monkeypatch):
+    # A local-clone upgrade shells ``git -C ... && ...`` together; POSIX shell
+    # is assumed, so no command is offered on Windows. A git install is still
+    # offered (shell-independent); that is covered by the other tests.
     monkeypatch.delenv("TRADINGAGENTS_IN_DOCKER", raising=False)
+    monkeypatch.setattr(updates.sys, "executable", "/venv/bin/python")
     monkeypatch.setattr(updates.os, "name", "nt")
-    assert updates.upgrade_command(_dist({"url": "https://github.com/TauricResearch/TradingAgents.git",
-                                          "vcs_info": {"vcs": "git"}})) is None
+    clone_url = "file:///opt/clone"
+    assert updates.upgrade_command(_dist({"url": clone_url, "dir_info": {"editable": True}})) is None
+    assert updates.upgrade_command(_dist({"url": clone_url, "dir_info": {}})) is None
 
 
 @pytest.mark.unit

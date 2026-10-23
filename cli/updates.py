@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urldefrag, urlparse
 
 import requests
 from packaging.version import InvalidVersion, Version
@@ -178,12 +178,37 @@ def messages(cache: dict, running: str, upgrade: Callable[[], str | None] = lamb
     return lines
 
 
+def _clone_of(url: str, posix: bool = True) -> str | None:
+    """The local clone a file ``direct_url`` names, or None when it is not one.
+
+    pip records the local clone as a file URL, not a path to type: on Windows
+    that is ``file:///D:/...``. The clone is read back from the recorded URL so
+    the command names what the installer actually recorded. ``posix`` names the
+    path dialect the URL was written in (a test fakes it with a POSIX-looking
+    file URL from a Windows host) and controls which way the read-back goes.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "file":
+        return None
+    path, _ = urldefrag(parsed.path)
+    text = unquote(path)
+    if posix:
+        # A file URL names the clone in POSIX form; on a Windows host a drive
+        # letter sits after the leading slash, so drop that slash to read the
+        # name back as this host's path.
+        if len(text) >= 3 and text[0] == "/" and text[2:3] == ":":
+            text = text[1] + text[3:]
+    else:
+        # No leading drive slash in the URL means it was written by this host's
+        # path flavour; read it back unchanged.
+        pass
+    return text
+
+
 def upgrade_command(dist=None) -> str | None:
     """The command that upgrades this install, from how pip or uv recorded it; None when unsure."""
     if os.environ.get("TRADINGAGENTS_IN_DOCKER"):
         return "git pull && docker compose build (on the host)"
-    if os.name == "nt":                    # the commands below are POSIX shell
-        return None
     try:
         dist = dist or importlib.metadata.distribution("tradingagents")
         direct = json.loads(dist.read_text("direct_url.json") or "null")
@@ -192,18 +217,24 @@ def upgrade_command(dist=None) -> str | None:
         return None
     if not isinstance(direct, dict) or not direct.get("url"):
         return None
+    # The upgrade commands shell the installer together; POSIX shell is assumed.
+    # A git install is a single shell-independent command, so it is offered on
+    # every platform; the local-clone cases (``git -C ... && ...``) need POSIX,
+    # so on Windows no command is offered for them (a half-working notice is
+    # worse than a quiet one).
     python = shlex.quote(sys.executable)
     install = f"uv pip install --python {python}" if installer == "uv" else f"{python} -m pip install"
     if "vcs_info" in direct:
         return f"{install} -U git+{direct['url']}"
-    parsed = urlparse(direct["url"])
-    if parsed.scheme != "file":
+    if os.name == "nt":
         return None
-    clone = Path(unquote(parsed.path))
-    if not (clone / ".git").exists():
+    # A local clone names a path to type: read it back from the recorded URL so
+    # the command names what the installer actually recorded.
+    clone = _clone_of(direct["url"])
+    if clone is None or not (Path(clone) / ".git").exists():
         return None
     editable = (direct.get("dir_info") or {}).get("editable")
-    target = shlex.quote(str(clone))
+    target = shlex.quote(clone)
     return f"git -C {target} pull && {install} {'-e ' if editable else ''}{target}"
 
 
