@@ -27,7 +27,6 @@ Exit codes:
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import sys
@@ -53,10 +52,12 @@ def _safe_name(ticker: str) -> str:
     """A directory name for ``ticker``: safe against traversal, readable."""
     return _PATH_SAFE_RE.sub("_", ticker.upper()).replace(" ", "")
 
-# Which analysts the daily sweep runs. The NSE/BSE news leg currently degrades
-# to what yfinance/GDELT/AV can serve; keeping fundamentals off the sweep
-# halves the LLM cost (each cell runs the trader + two debate rounds on top).
-SELECTED_ANALYSTS = ["market", "news"]
+def _selected_analysts() -> list[str]:
+    """Which analysts the daily sweep runs: DAILY_REPORT_ANALYSTS in .env,
+    else market + news. The NSE/BSE news leg currently degrades to what
+    yfinance/GDELT/AV can serve; keeping fundamentals off the sweep halves
+    the LLM cost (each cell runs the trader + two debate rounds on top)."""
+    return daily_config.analysts()
 
 
 def _today_dir(out_root: Path) -> tuple[str, Path]:
@@ -65,8 +66,8 @@ def _today_dir(out_root: Path) -> tuple[str, Path]:
 
 
 def _reports_root(results_dir: Path) -> Path:
-    """Where dated report folders live: JSON config ``reports_dir`` >
-    DAILY_REPORTS_DIR env > <results_dir>/reports."""
+    """Where dated report folders live: DAILY_REPORTS_DIR in .env, else
+    <results_dir>/reports."""
     return daily_config.reports_dir()
 
 
@@ -105,7 +106,7 @@ def run() -> int:
           f"{len(lists['sensex'])} SENSEX = {total} tickers -> {out_dir}",
           flush=True)
 
-    graph = TradingAgentsGraph(SELECTED_ANALYSTS, config=config)
+    graph = TradingAgentsGraph(_selected_analysts(), config=config)
     failures: list[tuple[str, str]] = []
     skipped = 0
 

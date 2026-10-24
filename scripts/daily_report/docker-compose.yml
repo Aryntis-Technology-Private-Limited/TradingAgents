@@ -14,13 +14,12 @@
 #
 # Runtime configuration (per user directive 2026-10-24: "moving the reports
 # folder must be a configuration change, not a rebuild+deploy"):
-#   The gate and the runner read /home/appuser/.tradingagents/daily_report.json
-#   (on the named volume) at process start. Precedence: JSON > the
-#   DAILY_REPORT_* env vars below > built-in defaults. Edit the JSON to
-#   change reports_dir / hour / until / run_on_startup / analysts — the
-#   change takes effect at the next fire (a fresh process each time), with
-#   no image rebuild and no container recreation. The env vars here are
-#   the fallback values, not the way to make changes.
+#   There is no database in this project, so these knobs live in the repo's
+#   .env file (already mounted here via env_file). Edit the DAILY_REPORT_*
+#   keys in .env to change reports_dir / hour / until / run_on_startup /
+#   analysts — the change takes effect at the next fire (a fresh process is
+#   spawned each time), with NO image rebuild and NO container recreation.
+#   See scripts/daily_report/config.py for the full key list.
 #
 # Retention: the runner deletes previous days' report folders at the start of
 # each run (no archive is kept), so the reports root holds at most today's
@@ -42,25 +41,12 @@ services:
     environment:
       - TRADINGAGENTS_IN_DOCKER=1
       - TRADINGAGENTS_RESULTS_DIR=/home/appuser/.tradingagents/logs
-      # Fallback values only — daily_report.json (on the named volume,
-      # /home/appuser/.tradingagents/daily_report.json) wins when it sets
-      # these keys. Keep them in sync with the JSON so a missing JSON does
-      # not silently change behavior.
-      # DAILY_REPORTS_DIR: reports root; note the container runs as uid 1000
-      # (appuser), so it can only write paths it has access to — paths under
-      # /root on the host need `chmod o+x /root` plus a bind mount, or use a
-      # volume-backed path instead.
-      - DAILY_REPORTS_DIR=/home/appuser/.tradingagents/reports
-      # The gate's stop date: it will run every day until this date (inclusive),
-      # then exit so the container stops rescheduling itself.
-      - DAILY_REPORT_UNTIL=${DAILY_REPORT_UNTIL:-2027-01-01}
-      # The hour (24h, server-local time) the report fires. Default 02:00 IST
-      # so the ~3h sweep finishes well before market open (09:15 IST).
-      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-2}
-      # 1 = the container waits for the first run immediately on startup;
-      # 0 = only fire on the schedule. Default 1 so a manual `up -d` today
-      # still produces today's report.
-      - DAILY_REPORT_RUN_ON_STARTUP=${DAILY_REPORT_RUN_ON_STARTUP:-1}
+      # The DAILY_REPORT_* keys are set in .env (per the design above); the
+      # built-in defaults in scripts/daily_report/config.py apply when a key
+      # is absent. Note the container runs as uid 1000 (appuser), so a
+      # DAILY_REPORTS_DIR value must be a path that uid 1000 can write —
+      # inside the mounted /home/appuser/.tradingagents tree, or a bind
+      # mount of a host dir with matching ownership.
     volumes:
       - daily_reports:/home/appuser/.tradingagents
     restart: unless-stopped
