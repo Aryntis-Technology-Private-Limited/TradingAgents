@@ -29,6 +29,12 @@ default):
 - DAILY_REPORT_UNTIL     YYYY-MM-DD, last day the gate fires (default 2027-01-01)
 - DAILY_REPORT_RUN_ON_STARTUP   1/0, fire immediately on container start (default 1)
 - DAILY_REPORT_ANALYSTS  comma list, e.g. "market,news" (default: market,news)
+
+Digest module (scripts/daily_report/digest.py):
+- DAILY_DIGEST_HOUR      hour 0-23, server-local, the 08:00 digest PDF fire
+  (default 8). Runs AFTER the report sweep's hour so it reads a completed day.
+- DAILY_DIGEST_PDF       output path for the morning digest PDF (default:
+  <reports_dir>/digest/<YYYY-MM-DD>.pdf)
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ _DEFAULTS: dict[str, str] = {
     "hour": "2",
     "until": "2027-01-01",
     "run_on_startup": "1",
+    "digest_hour": "8",
 }
 
 
@@ -104,4 +111,29 @@ def analysts() -> list[str]:
     return ["market", "news"]
 
 
-__all__ = ["get", "reports_dir", "hour", "until", "run_on_startup", "analysts"]
+def digest_hour() -> int:
+    """The hour (0-23, server-local) the digest PDF fires: DAILY_DIGEST_HOUR,
+    default 8 — after the report sweep's hour, so it reads a completed day."""
+    raw = get("digest_hour", "8")
+    value = int(raw)
+    if not 0 <= value <= 23:
+        raise ValueError(f"DAILY_DIGEST_HOUR must be 0-23, got {raw!r}")
+    return value
+
+
+def digest_pdf_path() -> str:
+    """Output path for the digest PDF: DAILY_DIGEST_PDF, else
+    <reports_dir>/digest/<today>.pdf."""
+    import datetime
+
+    raw = os.environ.get("DAILY_DIGEST_PDF", "").strip()
+    if raw:
+        return raw
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    return str(reports_dir() / "digest" / f"{today}.pdf")
+
+
+__all__ = [
+    "get", "reports_dir", "hour", "until", "run_on_startup", "analysts",
+    "digest_hour", "digest_pdf_path",
+]
