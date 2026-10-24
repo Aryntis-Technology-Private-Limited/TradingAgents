@@ -10,15 +10,21 @@
 # every weekday. The gate skips Sat/Sun; public holidays are not tracked —
 # a report on a holiday just re-prices the last session's data. To stop the
 # schedule at 2027-01-01, the container exits by itself when the date passes
-# the DAILY_REPORT_UNTIL env var.
+# the stop date.
+#
+# Runtime configuration (per user directive 2026-10-24: "moving the reports
+# folder must be a configuration change, not a rebuild+deploy"):
+#   The gate and the runner read /home/appuser/.tradingagents/daily_report.json
+#   (on the named volume) at process start. Precedence: JSON > the
+#   DAILY_REPORT_* env vars below > built-in defaults. Edit the JSON to
+#   change reports_dir / hour / until / run_on_startup / analysts — the
+#   change takes effect at the next fire (a fresh process each time), with
+#   no image rebuild and no container recreation. The env vars here are
+#   the fallback values, not the way to make changes.
 #
 # Retention: the runner deletes previous days' report folders at the start of
-# each run (no archive is kept), so the volume holds at most today's reports.
-#
-# Reports land in the named volume at /home/appuser/.tradingagents/reports/daily/
-# On the host that volume is at:
-#   $(docker volume inspect tradingagents_daily_reports --format '{{.Mountpoint}}')
-#   -> /var/lib/docker/volumes/tradingagents_daily_reports/_data/.tradingagents/reports/
+# each run (no archive is kept), so the reports root holds at most today's
+# reports.
 
 services:
   daily-report:
@@ -36,12 +42,14 @@ services:
     environment:
       - TRADINGAGENTS_IN_DOCKER=1
       - TRADINGAGENTS_RESULTS_DIR=/home/appuser/.tradingagents/logs
-      # Reports root. The user requested /root/user/reports on the host, but
-      # /root is mode 700 owned by uid 0 while the container runs as uid 1000
-      # (appuser), so a host bind under /root is unreadable from inside.
-      # Reports therefore live in the named volume; on the host that is:
-      #   /var/lib/docker/volumes/daily_report_daily_reports/_data/reports/<date>/<ticker>/
-      # (same files, /home/appuser/.tradingagents/reports inside the container.)
+      # Fallback values only — daily_report.json (on the named volume,
+      # /home/appuser/.tradingagents/daily_report.json) wins when it sets
+      # these keys. Keep them in sync with the JSON so a missing JSON does
+      # not silently change behavior.
+      # DAILY_REPORTS_DIR: reports root; note the container runs as uid 1000
+      # (appuser), so it can only write paths it has access to — paths under
+      # /root on the host need `chmod o+x /root` plus a bind mount, or use a
+      # volume-backed path instead.
       - DAILY_REPORTS_DIR=/home/appuser/.tradingagents/reports
       # The gate's stop date: it will run every day until this date (inclusive),
       # then exit so the container stops rescheduling itself.
