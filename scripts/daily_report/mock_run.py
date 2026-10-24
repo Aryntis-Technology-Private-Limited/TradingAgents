@@ -7,8 +7,12 @@ tune the sweep budget:
   3. digest      - read reports, select interesting, render PDF/HTML
 
 Writes to a mock reports dir under DAILY_REPORTS_DIR/mock/<today>/ and the
-digest to DAILY_REPORTS_DIR/mock/<today>_digest.pdf. Run inside the
-container:
+digest to DAILY_REPORTS_DIR/mock/<today>_digest.pdf. The sweep is parallel
+(DAILY_REPORT_SWEEP_WORKERS, default 5) - one LLM slot per worker, matching
+the operator's 5-slot quota - so a 5-ticker mock run and a 78-ticker daily
+sweep share the same throughput profile.
+
+Run inside the container:
 
   python -m scripts.daily_report.mock_run
 
@@ -22,6 +26,7 @@ import os
 import random
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tradingagents import default_config as config_module
@@ -38,6 +43,15 @@ POOL = ["TCS.NS", "HDFCBANK.NS", "INFY.NS", "RELIANCE.NS", "SBIN.NS",
         "ADANIENT.NS", "WIPRO.NS", "LT.NS", "ITC.NS", "MARUTI.NS"]
 
 
+def _sweep_workers() -> int:
+    """Parallel LLM slots for the sweep (one report at a time per slot),
+    mirroring the operator's 5-slot quota. Falls back to 5."""
+    raw = os.environ.get("DAILY_REPORT_SWEEP_WORKERS", "").strip()
+    if raw.isdigit() and int(raw) >= 1:
+        return int(raw)
+    return 5
+
+
 def main() -> int:
     t0 = time.time()
     config = config_module.build_default_config()
@@ -48,40 +62,56 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     tickers = random.sample(POOL, N_TICKERS)
+    workers = _sweep_workers()
     print(f"[mock] {today} · {len(tickers)} random tickers: {tickers}", flush=True)
-    print(f"[mock] reports -> {out_dir}", flush=True)
+    print(f"[mock] reports -> {out_dir} · sweep parallelism: {workers}", flush=True)
 
     t1 = time.time()
     graph = TradingAgentsGraph(daily_config.analysts(), config=config)
     t_bootstrap = t1 - t0
     print(f"[time] bootstrap (config+graph): {t_bootstrap:.1f}s", flush=True)
 
+    # One graph per worker thread - the LangGraph graph is stateful across a
+    # single propagate() call, so sharing it across threads races.
+    graphs = [TradingAgentsGraph(daily_config.analysts(), config=config)
+              for _ in range(workers)]
+
+    def _one(slot: int, ticker: str) -> tuple[str, float, str | None]:
+        ts = time.time()
+        try:
+            final_state, _ = graphs[slot].propagate(ticker, today, asset_type="stock")
+            target = out_dir / daily_runner._safe_name(ticker)
+            graphs[slot].save_reports(final_state, ticker, target, html=True)
+            return ticker, time.time() - ts, None
+        except Exception as exc:
+            return ticker, time.time() - ts, str(exc)
+
     t_sweep_start = time.time()
     per_ticker: list[tuple[str, float]] = []
     failures: list[tuple[str, str]] = []
-    for i, ticker in enumerate(tickers, 1):
-        ts = time.time()
-        try:
-            final_state, _ = graph.propagate(ticker, today, asset_type="stock")
-            target = out_dir / daily_runner._safe_name(ticker)
-            graph.save_reports(final_state, ticker, target, html=True)
-            print(f"  [{i}/{len(tickers)}] {ticker} done ({time.time() - ts:.1f}s)", flush=True)
-            per_ticker.append((ticker, time.time() - ts))
-        except Exception as exc:
-            failures.append((ticker, str(exc)))
-            print(f"  [{i}/{len(tickers)}] {ticker} FAILED ({time.time() - ts:.1f}s): {exc}",
-                  flush=True)
+    slot_next = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_one, slot_next % workers, tk) for tk in tickers]
+        slot_next += 1
+        for fut in as_completed(futures):
+            ticker, dt, err = fut.result()
+            if err:
+                failures.append((ticker, err))
+                print(f"  {ticker} FAILED ({dt:.1f}s): {err[:100]}", flush=True)
+            else:
+                per_ticker.append((ticker, dt))
+                print(f"  {ticker} done ({dt:.1f}s)", flush=True)
     t_sweep = time.time() - t_sweep_start
     done = [dt for _tk, dt in per_ticker]
-    print(f"[time] sweep total: {t_sweep:.1f}s · {len(per_ticker)} ok, "
-          f"{len(failures)} failed", flush=True)
+    print(f"[time] sweep total (parallel {workers}): {t_sweep:.1f}s · "
+          f"{len(per_ticker)} ok, {len(failures)} failed", flush=True)
     if done:
-        print(f"[time] per-ticker min/avg/max: "
+        print(f"[time] per-ticker min/avg/max (single-LLM-slot time): "
               f"{min(done):.1f}s / {sum(done) / len(done):.1f}s / {max(done):.1f}s", flush=True)
-    for tk, dt in per_ticker:
+    for tk, dt in sorted(per_ticker, key=lambda x: x[0]):
         print(f"       {tk}: {dt:.1f}s", flush=True)
 
-    # Digest: reads directly from out_dir, PDF written to mock_root
+    # Digest: reads directly from out_dir, PDF written to mock_root.
     os.environ["DAILY_DIGEST_PDF"] = str(mock_root / f"{today}_digest.pdf")
 
     t_dig_start = time.time()
@@ -100,14 +130,15 @@ def main() -> int:
     print(json.dumps({
         "date": today,
         "tickers": tickers,
+        "sweep_workers": workers,
         "seconds": {
             "bootstrap": round(t_bootstrap, 1),
-            "sweep_total": round(t_sweep, 1),
-            "sweep_avg_per_ticker": round(t_sweep / max(len(tickers), 1), 1),
+            "sweep_total_wall": round(t_sweep, 1),
+            "sweep_avg_per_ticker_llm_time": round(sum(done) / len(done), 1) if done else None,
             "digest": round(t_digest, 1),
-            "grand_total": round(total, 1),
+            "grand_total_wall": round(total, 1),
         },
-        "per_ticker_seconds": {tk: round(dt, 1) for tk, dt in per_ticker},
+        "per_ticker_seconds": {tk: round(dt, 1) for tk, dt in sorted(per_ticker)},
         "failures": [f"{tk}: {msg[:80]}" for tk, msg in failures],
         "interesting": [d.ticker for d in interesting],
         "pdf": str(out_pdf),

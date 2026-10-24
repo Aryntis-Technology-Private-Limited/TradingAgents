@@ -16,6 +16,9 @@ Behavior:
   ``results_dir``).
 - Retention: dated folders older than the retention window (DAILY_REPORT_
   RETENTION_DAYS, default 30 days) are deleted at the start of each run.
+- Parallelism: up to DAILY_REPORT_SWEEP_WORKERS (default 5) tickers are
+  analyzed at a time - one LLM slot per worker, matching the 5-slot API
+  quota. Set it to 1 for the legacy serial sweep.
 - One ticker failure never stops the sweep (same contract as the backtest
   sweep in tradingagents/backtest.py).
 
@@ -29,6 +32,7 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tradingagents import default_config as config_module
@@ -57,6 +61,21 @@ def _selected_analysts() -> list[str]:
     yfinance/GDELT/AV can serve; keeping fundamentals off the sweep halves
     the LLM cost (each cell runs the trader + two debate rounds on top)."""
     return daily_config.analysts()
+
+
+def _sweep_workers() -> int:
+    """Parallel LLM slots for the sweep: DAILY_REPORT_SWEEP_WORKERS in .env,
+    default 5 - matching the operator's 5-slot API quota, so 5 tickers are
+    analyzed at a time. Each slot owns its own graph instance (a
+    LangGraph graph is stateful across one propagate() call and must not
+    be shared across threads). Setting 1 restores the legacy serial
+    sweep."""
+    import os
+
+    raw = os.environ.get("DAILY_REPORT_SWEEP_WORKERS", "").strip()
+    if raw.isdigit() and int(raw) >= 1:
+        return int(raw)
+    return 5
 
 
 def _today_dir(out_root: Path) -> tuple[str, Path]:
@@ -112,35 +131,57 @@ def run() -> int:
           flush=True)
 
     graph = TradingAgentsGraph(_selected_analysts(), config=config)
-    failures: list[tuple[str, str]] = []
-    skipped = 0
+    workers = _sweep_workers()
+    # One graph per worker slot: a LangGraph graph is stateful across one
+    # propagate() call and must not be shared across threads. With 5 slots
+    # (the API quota), 5 tickers run at a time.
+    graphs = [TradingAgentsGraph(_selected_analysts(), config=config)
+              for _ in range(workers)]
 
-    for index, ticker in enumerate(tickers, 1):
-        # A report written on an earlier run of today is final; do not re-pay
-        # for it after a crash mid-sweep.
+    def _process_one(slot: int, index: int, ticker: str) -> tuple[str, str, str | None]:
+        """Analyze one ticker on its slot's graph. Returns
+        (ticker, 'done'|'skipped'|'failed', reason)."""
         marker = out_dir / _safe_name(ticker) / "complete_report.md"
         if marker.is_file():
-            skipped += 1
-            print(f"  [{index}/{total}] {ticker} {today} (already done, skipped)", flush=True)
-            continue
+            return ticker, "skipped", None
         print(f"  [{index}/{total}] {ticker} {today} running...", flush=True)
         try:
-            final_state, _signal = graph.propagate(
-                ticker, today, asset_type="stock",
-            )
+            g = graphs[slot % len(graphs)]
+            final_state, _signal = g.propagate(ticker, today, asset_type="stock")
             target = out_dir / _safe_name(ticker)
-            graph.save_reports(final_state, ticker, target, html=True)
+            g.save_reports(final_state, ticker, target, html=True)
             print(f"  [{index}/{total}] {ticker} done", flush=True)
+            return ticker, "done", None
         except Exception as exc:  # one unreachable vendor must not end the sweep
-            failures.append((ticker, str(exc)))
             print(f"  [{index}/{total}] {ticker} FAILED: {exc}", flush=True)
+            return ticker, "failed", str(exc)
+
+    failures: list[tuple[str, str]] = []
+    skipped = 0
+    done_count = 0
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_process_one, i, i, ticker): i
+            for i, ticker in enumerate(tickers, 1)
+        }
+        for fut in as_completed(futures):
+            ticker, status, reason = fut.result()
+            if status == "skipped":
+                skipped += 1
+                print(f"  {ticker} {today} (already done, skipped)", flush=True)
+            elif status == "done":
+                done_count += 1
+            else:
+                failures.append((ticker, reason))
 
     # Settle any pending decisions against their benchmarks so their lessons
     # feed the next run; a settlement failure is not a sweep failure.
     print("\n=== daily-report summary ===")
     print(f"date: {today}")
-    print(f"tickers: {total} · done {total - skipped - len(failures)} · "
+    print(f"tickers: {total} · done {done_count} · "
           f"skipped (already run) {skipped} · failed {len(failures)}")
+    print(f"sweep parallelism: {workers} slot(s)")
     print(f"reports: {out_dir}")
     for ticker, reason in failures:
         print(f"failed: {ticker}: {reason}")
