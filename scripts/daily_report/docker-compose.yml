@@ -3,14 +3,18 @@
 # Usage (on the cloud server, in the repo root):
 #   docker compose -f scripts/daily_report/docker-compose.yml up -d
 #
-# The container stays up as a thin "cron gate": it runs the daily report at
-# 02:00 (server local time — the target box is on Asia/Kolkata, so that is
-# 02:00 IST, after the full previous trading session has closed at 15:30 IST
-# and a ~3-hour sweep finishes well before the 09:15 IST market open) on
-# every weekday. The gate skips Sat/Sun; public holidays are not tracked —
-# a report on a holiday just re-prices the last session's data. To stop the
-# schedule at 2027-01-01, the container exits by itself when the date passes
-# the stop date.
+# The container stays up as a thin "cron gate" that fires two jobs per
+# TRADING DAY (Mon-Fri minus declared NSE/BSE exchange holidays):
+#   - the report sweep at DAILY_REPORT_HOUR (default 02:00 IST, after the
+#     previous session closed at 15:30 IST and a ~3-hour sweep finishes
+#     well before the 09:15 market open)
+#   - the morning action digest PDF at DAILY_DIGEST_HOUR (default 08:00 IST)
+# Exchange holidays are maintained in
+# /home/appuser/.tradingagents/exchange_holidays.json (on the named volume,
+# no rebuild to add a date); a fire landing on a declared holiday is skipped
+# and re-scheduled to the next trading day. To stop the schedule at
+# 2027-01-01 the container exits by itself when the date passes the stop
+# date.
 #
 # Runtime configuration (per user directive 2026-10-24: "moving the reports
 # folder must be a configuration change, not a rebuild+deploy"):

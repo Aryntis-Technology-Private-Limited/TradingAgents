@@ -1,10 +1,8 @@
 """Cron gate for the daily-report container: fire the report sweep, then the
-morning digest PDF, on each trading day.
+morning digest PDF, on each trading day (Mon-Fri minus exchange holidays).
 
 Runs as the container's entrypoint in place of the interactive CLI. Two jobs
-fire per trading day (Mon-Fri; the gate skips weekends, so a trigger that
-lands on Sat/Sun waits for Monday — exchange holidays are not tracked, a
-holiday run just re-prices the last session's data):
+fire per trading day:
 
 1. The report sweep (``scripts.daily_report.runner``) at DAILY_REPORT_HOUR
    (default 02:00, after the previous session closed at 15:30 IST), writing
@@ -13,6 +11,11 @@ holiday run just re-prices the last session's data):
    DAILY_DIGEST_HOUR (default 08:00, before the 09:15 market open),
    reading that day's sweep output and rendering the action PDF — the
    quiet "have a restful day" page when nothing is actionable.
+
+Trading days = Mon-Fri, EXCEPT dates in the exchange-holiday file
+(``/home/appuser/.tradingagents/exchange_holidays.json``, see
+scripts/daily_report/exchange_holidays.py). A fire that lands on a weekend
+or a declared exchange holiday waits for the next eligible day.
 
 A Python sleep loop is used instead of crontab inside the container: no
 extra daemon, it restarts with the container, and the stop date is enforced
@@ -26,7 +29,9 @@ container via ``env_file``), under DAILY_REPORT_* / DAILY_DIGEST_* keys.
 Edit .env to change any hour, the stop date, whether startup fires, the
 reports directory, the analysts, or the digest PDF path — the change takes
 effect at the next fire (a fresh process is spawned each time), with NO
-image rebuild. See scripts/daily_report/config.py for the full key list.
+image rebuild. Exchange holidays are maintained in the JSON file above,
+also without a rebuild. See scripts/daily_report/config.py for the full
+key list.
 """
 
 import subprocess
@@ -36,8 +41,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from scripts.daily_report import config as daily_config
+from scripts.daily_report import exchange_holidays
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _trading_day(iso_date: str) -> bool:
+    """Weekday and not a declared NSE/BSE holiday (operator file + library)."""
+    return exchange_holidays.is_trading_day(iso_date)
 
 
 def _hour() -> int:
@@ -79,14 +90,26 @@ def _fire_digest() -> int:
     )
 
 
+def _next_trading_day(start: datetime) -> datetime:
+    """First trading day (weekday, not a declared NSE/BSE holiday) at or
+    after ``start``'s date, at ``start``'s hour."""
+    day = start.date()
+    while not _trading_day(day.isoformat()):
+        label = exchange_holidays.holiday_label(day.isoformat())
+        if label:
+            print(f"[cron-gate] {day.isoformat()} is not a trading day "
+                  f"({label}); skipping", flush=True)
+        day += timedelta(days=1)
+    return datetime(day.year, day.month, day.day, start.hour, 0, 0)
+
+
 def _next_fire(now: datetime, hour: int) -> datetime:
-    """The next weekday at ``hour:00`` strictly after ``now``."""
+    """The next trading day (weekend- and holiday-skipped) at ``hour:00``
+    strictly after ``now``."""
     candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     if candidate <= now:
         candidate += timedelta(days=1)
-    while candidate.weekday() >= 5:  # 5=Sat, 6=Sun
-        candidate += timedelta(days=1)
-    return candidate
+    return _next_trading_day(candidate)
 
 
 def _day_events(now: datetime, until: datetime) -> list[tuple[datetime, str]]:
@@ -96,7 +119,7 @@ def _day_events(now: datetime, until: datetime) -> list[tuple[datetime, str]]:
     report_at = _next_fire(now, _hour())
     digest_at = _next_fire(now, _digest_hour())
     # If today's report hour already passed but the digest hour has not, the
-    # digest still fires today (it reads whatever the sweep wrote).
+    # digest still fires (it reads whatever the sweep wrote).
     if report_at <= until:
         events.append((report_at, "report"))
     if digest_at <= until:
@@ -133,8 +156,16 @@ def main() -> int:
         time.sleep(max(wait, 1.0))
 
         # The sleep can overshoot the boundary by seconds; only fire each job
-        # once per day.
+        # once per day, and only if that day is still a valid trading day
+        # (a holiday declared while the gate was sleeping is re-checked here).
         day = datetime.now().date()
+        iso = day.isoformat()
+        if not _trading_day(iso):
+            label = exchange_holidays.holiday_label(iso)
+            reason = f"declared holiday ({label})" if label else "weekend"
+            print(f"[cron-gate] {iso} is not a trading day ({reason}); "
+                  f"waiting for the next one", flush=True)
+            continue
         fired_today = last_fired.get(job)
         if fired_today is None or fired_today.date() != day:
             last_fired[job] = datetime.now()

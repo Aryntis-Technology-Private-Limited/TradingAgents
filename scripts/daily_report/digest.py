@@ -31,10 +31,9 @@ Exit codes:
 from __future__ import annotations
 
 import html
-import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from tradingagents import default_config as config_module
