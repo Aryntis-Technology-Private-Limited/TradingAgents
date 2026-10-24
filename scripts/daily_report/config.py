@@ -121,6 +121,19 @@ def digest_hour() -> int:
     return value
 
 
+def retention_days() -> int:
+    """How many calendar days of dated report folders to keep, including
+    today: DAILY_REPORT_RETENTION_DAYS, default 30 — history before the
+    retention window is pruned at every sweep (per user directive
+    2026-10-24: store only recent history, older folders can be dropped).
+    Must be >= 1."""
+    raw = os.environ.get("DAILY_REPORT_RETENTION_DAYS", "").strip() or "30"
+    value = int(raw)
+    if value < 1:
+        raise ValueError(f"DAILY_REPORT_RETENTION_DAYS must be >= 1, got {raw!r}")
+    return value
+
+
 def digest_pdf_path() -> str:
     """Output path for the digest PDF: DAILY_DIGEST_PDF, else
     <reports_dir>/digest/<today>.pdf."""
@@ -135,5 +148,5 @@ def digest_pdf_path() -> str:
 
 __all__ = [
     "get", "reports_dir", "hour", "until", "run_on_startup", "analysts",
-    "digest_hour", "digest_pdf_path",
+    "retention_days", "digest_hour", "digest_pdf_path",
 ]

@@ -14,9 +14,8 @@ Behavior:
   the reports root, default ``<results_dir>/reports/<YYYY-MM-DD>/<TICKER>/``
   (override with ``DAILY_REPORTS_DIR``; a relative value resolves against
   ``results_dir``).
-- Retention: date folders older than today are deleted at the start of the
-  run (no archive is kept), so the reports root holds at most the current
-  day's reports.
+- Retention: dated folders older than the retention window (DAILY_REPORT_
+  RETENTION_DAYS, default 30 days) are deleted at the start of each run.
 - One ticker failure never stops the sweep (same contract as the backtest
   sweep in tradingagents/backtest.py).
 
@@ -72,17 +71,23 @@ def _reports_root(results_dir: Path) -> Path:
 
 
 def _prune_old_daily(daily_root: Path, today: str) -> list[str]:
-    """Delete every dated folder under ``daily_root`` that is not ``today``'s.
-
-    No archive is kept: the volume holds at most the current day's reports.
-    Only folders whose name is a valid ``YYYY-MM-DD`` are touched, so a
-    stray non-date entry is never deleted. Returns the pruned folder names.
+    """Delete dated folders under ``daily_root`` older than the retention
+    window (DAILY_REPORT_RETENTION_DAYS, default 30 days, counted back from
+    ``today``). Only folders whose name is a valid ``YYYY-MM-DD`` are
+    touched, so a stray non-date entry is never deleted. Returns the pruned
+    folder names.
     """
+    import datetime
+
+    keep_from = (
+        datetime.date.fromisoformat(today)
+        - datetime.timedelta(days=daily_config.retention_days() - 1)
+    ).isoformat()
     pruned: list[str] = []
     if not daily_root.is_dir():
         return pruned
     for child in daily_root.iterdir():
-        if child.is_dir() and child.name != today and re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name):
+        if child.is_dir() and re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name) and child.name < keep_from:
             shutil.rmtree(child)
             pruned.append(child.name)
     return pruned
