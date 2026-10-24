@@ -263,12 +263,9 @@ def render_pdf(decisions: list[Decision], date_str: str, scanned: int) -> Path:
     ``decisions`` is the already-filtered list of interesting stocks; an
     empty list renders the quiet restful-day page.
     """
-    out = Path(daily_config.digest_pdf_path())
-    # Operators sometimes point DAILY_DIGEST_PDF at a directory (with or
-    # without a trailing slash); in that case drop the dated PDF into it
-    # instead of treating the dir as the filename.
-    if out.suffix != ".pdf":
-        out = out / f"{date_str}.pdf"
+    # The path layer guarantees a full <...>.pdf target: if DAILY_DIGEST_PDF
+    # named a directory, the dated PDF is dropped inside it.
+    out = Path(daily_config.digest_pdf_path(date_str))
     out.parent.mkdir(parents=True, exist_ok=True)
 
     if decisions:

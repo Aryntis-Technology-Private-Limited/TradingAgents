@@ -123,15 +123,26 @@ def retention_days() -> int:
     return value
 
 
-def digest_pdf_path() -> str:
+def digest_pdf_path(date_str: str | None = None) -> str:
     """Output path for the digest PDF: DAILY_DIGEST_PDF, else
-    <reports_dir>/digest/<today>.pdf."""
+    <reports_dir>/digest/<today>.pdf.
+
+    If DAILY_DIGEST_PDF names a directory (or a non-``.pdf`` path), the
+    dated PDF is dropped inside it, so operators can point the key at a
+    folder without a trailing filename. A date_str different from today
+    (e.g. re-rendering an older day's digest) is honoured in the default
+    path too.
+    """
     import datetime
 
     raw = os.environ.get("DAILY_DIGEST_PDF", "").strip()
+    today = (date_str or datetime.date.today().strftime("%Y-%m-%d"))
     if raw:
-        return raw
-    today = datetime.date.today().strftime("%Y-%m-%d")
+        base = Path(raw)
+        if base.suffix.lower() == ".pdf":
+            return str(base)
+        # Treat as a directory (with or without a trailing slash).
+        return str(base / f"{today}.pdf")
     return str(reports_dir() / "digest" / f"{today}.pdf")
 
 
