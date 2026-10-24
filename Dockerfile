@@ -8,10 +8,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
 COPY . .
+# WeasyPrint's native rendering stack: pango/cairo/gobject + fontconfig and a
+# real font, so the daily digest PDF renders crisp text rather than
+# falling back to an empty font.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libpango-1.0-0 libpangocairo-1.0-0 \
     libgdk-pixbuf-2.0-0 libffi-dev libcairo2 libglib2.0-0 libharfbuzz-subset0 \
-    libfontconfig1 libfreetype6 libfribidi0 \
+    libfontconfig1 libfreetype6 libfribidi0 fontconfig fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir . weasyprint
 
@@ -24,14 +27,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-# WeasyPrint's native rendering libraries (pango/cairo/gobject) were installed
-# into the builder stage; copy them over so the final image can render the
-# daily digest PDF.
+# WeasyPrint's native rendering libraries (pango/cairo/gobject/fontconfig)
+# plus the font config and fonts were installed into the builder stage;
+# copy them over so the final image can render the daily digest PDF.
 COPY --from=builder /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libcairo* /usr/lib/x86_64-linux-gnu/
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libpango* /usr/lib/x86_64-linux-gnu/
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libgobject* /usr/lib/x86_64-linux-gnu/
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libffi* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /etc/fonts /etc/fonts
+COPY --from=builder /usr/share/fonts /usr/share/fonts
 
 # The app installs as root into the shared /opt/venv (read-only after the
 # stage), then every runtime step runs as the unprivileged appuser, so a
