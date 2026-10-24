@@ -31,10 +31,10 @@ default):
 - DAILY_REPORT_ANALYSTS  comma list, e.g. "market,news" (default: market,news)
 
 Digest module (scripts/daily_report/digest.py):
-- DAILY_DIGEST_HOUR      hour 0-23, server-local, the 08:00 digest PDF fire
-  (default 8). Runs AFTER the report sweep's hour so it reads a completed day.
 - DAILY_DIGEST_PDF       output path for the morning digest PDF (default:
-  <reports_dir>/digest/<YYYY-MM-DD>.pdf)
+  <reports_dir>/digest/<YYYY-MM-DD>.pdf). The digest runs CHAINED right after
+  the report sweep completes (one scheduled fire per trading day, not two);
+  its hour is not separately configurable - it follows the sweep.
 """
 
 from __future__ import annotations
@@ -46,7 +46,6 @@ _DEFAULTS: dict[str, str] = {
     "hour": "2",
     "until": "2027-01-01",
     "run_on_startup": "1",
-    "digest_hour": "8",
 }
 
 
@@ -111,16 +110,6 @@ def analysts() -> list[str]:
     return ["market", "news"]
 
 
-def digest_hour() -> int:
-    """The hour (0-23, server-local) the digest PDF fires: DAILY_DIGEST_HOUR,
-    default 8 — after the report sweep's hour, so it reads a completed day."""
-    raw = get("digest_hour", "8")
-    value = int(raw)
-    if not 0 <= value <= 23:
-        raise ValueError(f"DAILY_DIGEST_HOUR must be 0-23, got {raw!r}")
-    return value
-
-
 def retention_days() -> int:
     """How many calendar days of dated report folders to keep, including
     today: DAILY_REPORT_RETENTION_DAYS, default 30 — history before the
@@ -148,5 +137,5 @@ def digest_pdf_path() -> str:
 
 __all__ = [
     "get", "reports_dir", "hour", "until", "run_on_startup", "analysts",
-    "retention_days", "digest_hour", "digest_pdf_path",
+    "retention_days", "digest_pdf_path",
 ]

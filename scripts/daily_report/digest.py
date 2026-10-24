@@ -1,31 +1,37 @@
 """Morning digest: condense the day's per-ticker reports into one action PDF.
 
-Fires daily at 08:00 (see DAILY_DIGEST_HOUR, the cron gate schedules it)
-AFTER the 02:00 report sweep. It reads every ticker's folder written under
-DAILY_REPORTS_DIR/<today>/, extracts the structured decision data (rating,
-action, entry, stop, sizing, target, horizon, executive summary), selects
-the stocks of interest for the day, and renders a single expert-UI PDF:
+Runs CHAINED right after the report sweep completes on each trading day
+(Mon-Fri, minus declared NSE/BSE exchange holidays) - the cron gate fires
+the sweep at DAILY_REPORT_HOUR and invokes this module immediately when the
+sweep returns, so the digest always summarizes a just-completed day's
+reports (never a half-written folder, and never a separately scheduled
+timer that could miss or double-fire). It reads every ticker's folder
+written under DAILY_REPORTS_DIR/<today>/, extracts the structured decision
+data (rating, action, entry, stop, sizing, target, horizon, executive
+summary), selects the stocks of interest for the day, and renders a single
+expert-UI PDF:
 
-  DAILY_DIGEST_PDF=<out> python -m scripts.daily_report.digest
+  python -m scripts.daily_report.digest
 
 Selection rule ("only stocks of interest"):
-- Directional calls — Buy / Overweight / Underweight / Sell — are the
+- Directional calls - Buy / Overweight / Underweight / Sell - are the
   actionable set. Pure Hold ratings are excluded unless they carry a
   fresh structured entry/stop (defensive trim).
 - Tickers with no parseable decision (REVIEW, missing trader output, or a
-  failed sweep cell) never make the PDF — a half-data row is worse than
+  failed sweep cell) never make the PDF - a half-data row is worse than
   no row.
 - If nothing is interesting, the PDF is a quiet one-pager: "Have a restful
-  day" — explicitly, not a silent empty file.
+  day" - explicitly, not a silent empty file.
 
-The PDF is self-contained HTML→PDF (no fonts to install): crisp dark
-header band, one compact card per stock with the decision strip, the
-executive summary, and a "today's move" checklist of exact levels. Print
-friendly (A4, margins, page-break-per-card).
+Rendering: self-contained HTML -> PDF via WeasyPrint (the Docker image
+ships pango/cairo/fontconfig + DejaVu fonts). A host without the native
+libraries still gets the print-ready HTML next to it.
+
+Output path: DAILY_DIGEST_PDF, default <reports_dir>/digest/<YYYY-MM-DD>.pdf.
 
 Exit codes:
-    0 — PDF written (including the quiet restful-day variant)
-    1 — today's report folder is missing (sweep hasn't run / failed)
+    0 - PDF written (including the quiet restful-day variant)
+    1 - today's report folder is missing (sweep has not run / failed)
 """
 
 from __future__ import annotations
