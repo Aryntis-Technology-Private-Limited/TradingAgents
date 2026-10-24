@@ -55,11 +55,13 @@ services:
       - daily_reports:/home/appuser/.tradingagents
       # Reports folder on the host (per user request 2026-10-24: reports live
       # at /root/user/reports, read directly on the box without a volume
-      # lookup). Bound at the same path inside the container so
-      # DAILY_REPORTS_DIR=/root/user/reports resolves identically inside and
-      # outside. The host dir is owned by the container's uid (1000) so the
-      # unprivileged appuser can write to it.
-      - /root/user/reports:/root/user/reports
+      # lookup). The host source is /root/user/reports; it is bound at a path
+      # the unprivileged appuser (uid 1000) can actually reach inside the
+      # container — /home/appuser/reports — because the container's /root is
+      # root-owned and not traversable by uid 1000. DAILY_REPORTS_DIR in
+      # .env is set to the container path /home/appuser/reports; the host path
+      # /root/user/reports is what the operator reads on the box.
+      - /root/user/reports:/home/appuser/reports
     restart: unless-stopped
 
 volumes:
