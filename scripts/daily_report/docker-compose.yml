@@ -36,6 +36,13 @@ services:
     environment:
       - TRADINGAGENTS_IN_DOCKER=1
       - TRADINGAGENTS_RESULTS_DIR=/home/appuser/.tradingagents/logs
+      # Reports root. The user requested /root/user/reports on the host, but
+      # /root is mode 700 owned by uid 0 while the container runs as uid 1000
+      # (appuser), so a host bind under /root is unreadable from inside.
+      # Reports therefore live in the named volume; on the host that is:
+      #   /var/lib/docker/volumes/daily_report_daily_reports/_data/reports/<date>/<ticker>/
+      # (same files, /home/appuser/.tradingagents/reports inside the container.)
+      - DAILY_REPORTS_DIR=/home/appuser/.tradingagents/reports
       # The gate's stop date: it will run every day until this date (inclusive),
       # then exit so the container stops rescheduling itself.
       - DAILY_REPORT_UNTIL=${DAILY_REPORT_UNTIL:-2027-01-01}

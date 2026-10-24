@@ -11,10 +11,12 @@ Behavior:
   a ticker whose report was already written on a previous crashed run is
   skipped (idempotent re-runs pick up where the last one stopped).
 - Writes per-ticker complete_report.md + complete_report.html under
-  ``<results_dir>/daily/<YYYY-MM-DD>/<TICKER>/``.
+  the reports root, default ``<results_dir>/reports/<YYYY-MM-DD>/<TICKER>/``
+  (override with ``DAILY_REPORTS_DIR``; a relative value resolves against
+  ``results_dir``).
 - Retention: date folders older than today are deleted at the start of the
-  run (no archive is kept), so the volume holds at most the current day's
-  reports.
+  run (no archive is kept), so the reports root holds at most the current
+  day's reports.
 - One ticker failure never stops the sweep (same contract as the backtest
   sweep in tradingagents/backtest.py).
 
@@ -25,6 +27,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sys
@@ -35,6 +38,7 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.dataflows.date_window import get_current_date
 from tradingagents.dataflows.symbols import safe_ticker_component
 
+from scripts.daily_report import config as daily_config
 from scripts.daily_report.nifty_sensex import both
 
 # Tickers whose NSE/BSE spelling carries a character ``safe_ticker_component``
@@ -60,7 +64,13 @@ def _today_dir(out_root: Path) -> tuple[str, Path]:
     return today, out_root / today
 
 
-def _prune_old_daily(daily_root: Path, today: str) -> list[str]:
+def _reports_root(results_dir: Path) -> Path:
+    """Where dated report folders live: JSON config ``reports_dir`` >
+    DAILY_REPORTS_DIR env > <results_dir>/reports."""
+    return daily_config.reports_dir()
+
+
+def _prune_old_daily(daily_root: Path) -> list[str]:
     """Delete every dated folder under ``daily_root`` that is not today's.
 
     No archive is kept: the volume holds at most the current day's reports.
@@ -80,7 +90,8 @@ def _prune_old_daily(daily_root: Path, today: str) -> list[str]:
 def run() -> int:
     config = config_module.build_default_config()
     results_dir = Path(config["results_dir"])
-    today, out_dir = _today_dir(results_dir / "daily")
+    reports_root = _reports_root(results_dir)
+    today, out_dir = _today_dir(reports_root)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     pruned = _prune_old_daily(out_dir.parent, today)

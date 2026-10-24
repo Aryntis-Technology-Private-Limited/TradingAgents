@@ -10,42 +10,46 @@ A Python sleep loop is used instead of crontab inside the container: no extra
 daemon, it restarts with the container, and the stop date is enforced in code
 rather than as a cron line that could outlive the intended end date.
 
-Environment (all optional, defaults shown):
-    DAILY_REPORT_HOUR         hour in 0-23, server-local (default 2)
-    DAILY_REPORT_UNTIL        YYYY-MM-DD inclusive stop date (default 2027-01-01)
-    DAILY_REPORT_RUN_ON_STARTUP   "1"/"0": fire once immediately on start (default 1)
+Config layering (highest priority first):
+    1. daily_report.json (on the named volume, /home/appuser/.tradingagents/
+       daily_report.json inside the container) — edited at runtime, takes
+       effect at the next gate fire, no rebuild/recreate needed.
+    2. DAILY_REPORT_* environment variables (set in docker-compose.yml).
+    3. Built-in defaults.
+
+Keys in the JSON: hour, until, run_on_startup, reports_dir, analysts.
+See scripts/daily_report/config.py for the full contract.
 
 Only weekdays fire: the gate skips Sat/Sun dates at the fire boundary, so a
-08:00 trigger that lands on a weekend waits for Monday.
+trigger that lands on a weekend waits for Monday.
 """
 
-import os
 import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from scripts.daily_report import config as daily_config
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def _hour() -> int:
-    raw = os.environ.get("DAILY_REPORT_HOUR", "2").strip()
     try:
-        value = int(raw)
-    except ValueError:
-        raise SystemExit(f"DAILY_REPORT_HOUR must be an int 0-23, got {raw!r}")
+        value = daily_config.hour()
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     if not 0 <= value <= 23:
-        raise SystemExit(f"DAILY_REPORT_HOUR must be 0-23, got {value}")
+        raise SystemExit(f"daily_report 'hour' must be 0-23, got {value}")
     return value
 
 
 def _until() -> datetime:
-    raw = os.environ.get("DAILY_REPORT_UNTIL", "2027-01-01").strip()
     try:
-        return datetime.strptime(raw, "%Y-%m-%d")
-    except ValueError:
-        raise SystemExit(f"DAILY_REPORT_UNTIL must be YYYY-MM-DD, got {raw!r}")
+        return datetime.strptime(daily_config.until(), "%Y-%m-%d")
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
 
 def _fire() -> int:
@@ -70,7 +74,7 @@ def _next_fire(now: datetime, hour: int) -> datetime:
 def main() -> int:
     hour = _hour()
     until = _until()
-    run_on_startup = os.environ.get("DAILY_REPORT_RUN_ON_STARTUP", "1") not in ("0", "false", "False")
+    run_on_startup = daily_config.run_on_startup()
 
     if run_on_startup:
         _fire()
