@@ -264,6 +264,11 @@ def render_pdf(decisions: list[Decision], date_str: str, scanned: int) -> Path:
     empty list renders the quiet restful-day page.
     """
     out = Path(daily_config.digest_pdf_path())
+    # Operators sometimes point DAILY_DIGEST_PDF at a directory (with or
+    # without a trailing slash); in that case drop the dated PDF into it
+    # instead of treating the dir as the filename.
+    if out.suffix != ".pdf":
+        out = out / f"{date_str}.pdf"
     out.parent.mkdir(parents=True, exist_ok=True)
 
     if decisions:
