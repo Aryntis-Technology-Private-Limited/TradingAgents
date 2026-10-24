@@ -69,8 +69,13 @@ def reports_dir() -> Path:
     return Path(config_module.build_default_config()["results_dir"]) / "reports"
 
 
+def reports_dir_str() -> str:
+    """reports_dir() as a plain string, for display/logging."""
+    return str(reports_dir())
+
+
 def hour() -> int:
-    raw = get("hour")
+    raw = get("hour", "2")
     value = int(raw)
     if not 0 <= value <= 23:
         raise ValueError(f"DAILY_REPORT_HOUR must be 0-23, got {raw!r}")
@@ -80,7 +85,7 @@ def hour() -> int:
 def until() -> str:
     import datetime
 
-    raw = get("until")
+    raw = get("until", "2027-01-01")
     datetime.datetime.strptime(str(raw), "%Y-%m-%d")  # validate, raises if bad
     return str(raw)
 

@@ -20,6 +20,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# The app installs as root into the shared /opt/venv (read-only after the
+# stage), then every runtime step runs as the unprivileged appuser, so a
+# container compromise does not land as root.
 RUN useradd --create-home appuser \
  && install -d -m 0755 -o appuser -g appuser /home/appuser/.tradingagents
 USER appuser

@@ -1,24 +1,23 @@
 """Cron gate for the daily-report container: fire the report at a fixed time each day.
 
 Runs as the container's entrypoint in place of the interactive CLI. Each loop
-iteration sleeps until the next DAILY_REPORT_HOUR boundary (server-local time),
-runs the report via ``python -m scripts.daily_report.runner``, and checks the
-stop date: once today has passed DAILY_REPORT_UNTIL the gate exits 0 and the
-container stops, so it does not keep firing past the requested end date.
+iteration sleeps until the next fire hour (server-local time), runs the report
+via ``python -m scripts.daily_report.runner``, and checks the stop date: once
+today has passed the stop date the gate exits 0 and the container stops, so
+it does not keep firing past the requested end date.
 
 A Python sleep loop is used instead of crontab inside the container: no extra
 daemon, it restarts with the container, and the stop date is enforced in code
 rather than as a cron line that could outlive the intended end date.
 
-Config layering (highest priority first):
-    1. daily_report.json (on the named volume, /home/appuser/.tradingagents/
-       daily_report.json inside the container) — edited at runtime, takes
-       effect at the next gate fire, no rebuild/recreate needed.
-    2. DAILY_REPORT_* environment variables (set in docker-compose.yml).
-    3. Built-in defaults.
-
-Keys in the JSON: hour, until, run_on_startup, reports_dir, analysts.
-See scripts/daily_report/config.py for the full contract.
+Configuration (per user directive 2026-10-24: "a folder move must be a
+configuration change, not a rebuild+deploy"): there is no database in this
+project, so the knobs live in the repo's .env file (mounted into the
+container via ``env_file``), under DAILY_REPORT_* keys. Edit .env to change
+the fire hour, stop date, whether startup fires, the reports directory, or
+which analysts run — the change takes effect at the next fire (a fresh
+process is spawned each time), with NO image rebuild. See
+scripts/daily_report/config.py for the full key list and defaults.
 
 Only weekdays fire: the gate skips Sat/Sun dates at the fire boundary, so a
 trigger that lands on a weekend waits for Monday.
@@ -37,12 +36,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _hour() -> int:
     try:
-        value = daily_config.hour()
+        return daily_config.hour()
     except ValueError as exc:
         raise SystemExit(str(exc))
-    if not 0 <= value <= 23:
-        raise SystemExit(f"daily_report 'hour' must be 0-23, got {value}")
-    return value
 
 
 def _until() -> datetime:
