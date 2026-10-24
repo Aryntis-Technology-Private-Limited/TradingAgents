@@ -71,8 +71,8 @@ def _reports_root(results_dir: Path) -> Path:
     return daily_config.reports_dir()
 
 
-def _prune_old_daily(daily_root: Path) -> list[str]:
-    """Delete every dated folder under ``daily_root`` that is not today's.
+def _prune_old_daily(daily_root: Path, today: str) -> list[str]:
+    """Delete every dated folder under ``daily_root`` that is not ``today``'s.
 
     No archive is kept: the volume holds at most the current day's reports.
     Only folders whose name is a valid ``YYYY-MM-DD`` are touched, so a
