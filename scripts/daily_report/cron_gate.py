@@ -47,8 +47,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _trading_day(iso_date: str) -> bool:
-    """Weekday and not a declared NSE/BSE holiday (operator file + library)."""
-    return exchange_holidays.is_trading_day(iso_date)
+    """Weekday and not a declared NSE/BSE exchange holiday."""
+    import datetime as _dt
+
+    day = _dt.datetime.strptime(iso_date, "%Y-%m-%d").date()
+    if day.weekday() >= 5:  # 5=Sat, 6=Sun
+        return False
+    return not exchange_holidays.is_exchange_holiday(iso_date)
 
 
 def _hour() -> int:
@@ -96,9 +101,9 @@ def _next_trading_day(start: datetime) -> datetime:
     day = start.date()
     while not _trading_day(day.isoformat()):
         label = exchange_holidays.holiday_label(day.isoformat())
-        if label:
-            print(f"[cron-gate] {day.isoformat()} is not a trading day "
-                  f"({label}); skipping", flush=True)
+        reason = f"declared holiday ({label})" if label else "weekend"
+        print(f"[cron-gate] {day.isoformat()} is not a trading day ({reason}); skipping",
+              flush=True)
         day += timedelta(days=1)
     return datetime(day.year, day.month, day.day, start.hour, 0, 0)
 
@@ -135,7 +140,6 @@ def main() -> int:
         _fire_report()
         _fire_digest()
 
-    last_fired: dict[str, datetime] = {}
     while True:
         now = datetime.now()
         if now.date() > until.date():
@@ -148,6 +152,7 @@ def main() -> int:
                   flush=True)
             return 0
 
+        # Wait for the earliest job that has not yet fired on its day.
         events.sort(key=lambda item: item[0])
         next_when, job = events[0]
         wait = (next_when - now).total_seconds()
@@ -155,9 +160,10 @@ def main() -> int:
               f"(in {wait/3600:.1f}h), stop after {until.date()}", flush=True)
         time.sleep(max(wait, 1.0))
 
-        # The sleep can overshoot the boundary by seconds; only fire each job
-        # once per day, and only if that day is still a valid trading day
-        # (a holiday declared while the gate was sleeping is re-checked here).
+        # The sleep can overshoot the boundary by seconds. Fire ``job`` only
+        # if that day is still a valid trading day (a holiday declared while
+        # the gate was sleeping is re-checked here) and the job has not
+        # already fired on it.
         day = datetime.now().date()
         iso = day.isoformat()
         if not _trading_day(iso):
@@ -166,13 +172,10 @@ def main() -> int:
             print(f"[cron-gate] {iso} is not a trading day ({reason}); "
                   f"waiting for the next one", flush=True)
             continue
-        fired_today = last_fired.get(job)
-        if fired_today is None or fired_today.date() != day:
-            last_fired[job] = datetime.now()
-            if job == "report":
-                _fire_report()
-            else:
-                _fire_digest()
+        if job == "report":
+            _fire_report()
+        else:
+            _fire_digest()
 
 
 if __name__ == "__main__":

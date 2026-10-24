@@ -53,6 +53,13 @@ services:
       # mount of a host dir with matching ownership.
     volumes:
       - daily_reports:/home/appuser/.tradingagents
+      # Reports folder on the host (per user request 2026-10-24: reports live
+      # at /root/user/reports, read directly on the box without a volume
+      # lookup). Bound at the same path inside the container so
+      # DAILY_REPORTS_DIR=/root/user/reports resolves identically inside and
+      # outside. The host dir is owned by the container's uid (1000) so the
+      # unprivileged appuser can write to it.
+      - /root/user/reports:/root/user/reports
     restart: unless-stopped
 
 volumes:
