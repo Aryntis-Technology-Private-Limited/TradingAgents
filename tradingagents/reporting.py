@@ -31,13 +31,17 @@ def _header(ticker: str, final_state: dict, settings: dict | None) -> str:
         quick_provider = s("quick_think_provider") or s("llm_provider", "?")
         if deep_provider == quick_provider:
             models = f"{deep_provider}, deep {s('deep_think_llm', '?')}, quick {s('quick_think_llm', '?')}"
-        else:   # each tier on its own provider (#1440)
-            models = (f"deep {deep_provider} {s('deep_think_llm', '?')}, "
-                      f"quick {quick_provider} {s('quick_think_llm', '?')}")
+        else:  # each tier on its own provider (#1440)
+            models = (
+                f"deep {deep_provider} {s('deep_think_llm', '?')}, "
+                f"quick {quick_provider} {s('quick_think_llm', '?')}"
+            )
         lines.append(f"- TradingAgents {s('version', '?')}: {models}")
-        lines.append(f"- Analysts: {', '.join(analyst_names(s('analysts')))}; "
-                     f"research debate rounds {s('max_debate_rounds', '?')}, "
-                     f"risk debate rounds {s('max_risk_discuss_rounds', '?')}")
+        lines.append(
+            f"- Analysts: {', '.join(analyst_names(s('analysts')))}; "
+            f"research debate rounds {s('max_debate_rounds', '?')}, "
+            f"risk debate rounds {s('max_risk_discuss_rounds', '?')}"
+        )
         vendors = {**(s("data_vendors") or {}), **(s("tool_vendors") or {})}
         if vendors:
             lines.append("- Data vendors: " + ", ".join(f"{k} {v}" for k, v in vendors.items()))
@@ -48,28 +52,48 @@ def _header(ticker: str, final_state: dict, settings: dict | None) -> str:
 
 # The report's sections in order: (heading, folder, [(agent, file, state path)]).
 _SECTIONS = (
-    ("I. Analyst Team Reports", "1_analysts", (
-        ("Market Analyst", "market.md", ("market_report",)),
-        ("Sentiment Analyst", "sentiment.md", ("sentiment_report",)),
-        ("News Analyst", "news.md", ("news_report",)),
-        ("Fundamentals Analyst", "fundamentals.md", ("fundamentals_report",)),
-    )),
-    ("II. Research Team Decision", "2_research", (
-        ("Bull Researcher", "bull.md", ("investment_debate_state", "bull_history")),
-        ("Bear Researcher", "bear.md", ("investment_debate_state", "bear_history")),
-        ("Research Manager", "manager.md", ("investment_plan",)),
-    )),
-    ("III. Trading Team Plan", "3_trading", (
-        ("Trader", "trader.md", ("trader_investment_plan",)),
-    )),
-    ("IV. Risk Management Team Decision", "4_risk", (
-        ("Aggressive Analyst", "aggressive.md", ("risk_debate_state", "aggressive_history")),
-        ("Conservative Analyst", "conservative.md", ("risk_debate_state", "conservative_history")),
-        ("Neutral Analyst", "neutral.md", ("risk_debate_state", "neutral_history")),
-    )),
-    ("V. Portfolio Manager Decision", "5_portfolio", (
-        ("Portfolio Manager", "decision.md", ("final_trade_decision",)),
-    )),
+    (
+        "I. Analyst Team Reports",
+        "1_analysts",
+        (
+            ("Market Analyst", "market.md", ("market_report",)),
+            ("Sentiment Analyst", "sentiment.md", ("sentiment_report",)),
+            ("News Analyst", "news.md", ("news_report",)),
+            ("Fundamentals Analyst", "fundamentals.md", ("fundamentals_report",)),
+        ),
+    ),
+    (
+        "II. Research Team Decision",
+        "2_research",
+        (
+            ("Bull Researcher", "bull.md", ("investment_debate_state", "bull_history")),
+            ("Bear Researcher", "bear.md", ("investment_debate_state", "bear_history")),
+            ("Research Manager", "manager.md", ("investment_plan",)),
+        ),
+    ),
+    (
+        "III. Trading Team Plan",
+        "3_trading",
+        (("Trader", "trader.md", ("trader_investment_plan",)),),
+    ),
+    (
+        "IV. Risk Management Team Decision",
+        "4_risk",
+        (
+            ("Aggressive Analyst", "aggressive.md", ("risk_debate_state", "aggressive_history")),
+            (
+                "Conservative Analyst",
+                "conservative.md",
+                ("risk_debate_state", "conservative_history"),
+            ),
+            ("Neutral Analyst", "neutral.md", ("risk_debate_state", "neutral_history")),
+        ),
+    ),
+    (
+        "V. Portfolio Manager Decision",
+        "5_portfolio",
+        (("Portfolio Manager", "decision.md", ("final_trade_decision",)),),
+    ),
 )
 
 
@@ -89,8 +113,9 @@ def _report_parts(final_state: dict) -> list[tuple[str, str, list[tuple[str, str
     return parts
 
 
-def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict | None = None,
-                      html: bool = True) -> Path:
+def write_report_tree(
+    final_state: dict, ticker: str, save_path, settings: dict | None = None, html: bool = True
+) -> Path:
     """Save a completed run's reports to ``save_path``; return the complete-report path.
 
     ``settings`` (``TradingAgentsGraph.run_settings()``) adds what produced the run

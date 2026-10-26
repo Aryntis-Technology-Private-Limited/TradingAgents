@@ -275,9 +275,11 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 
 config = DEFAULT_CONFIG.copy()
-config["llm_provider"] = "openai"        # e.g. openai, google, anthropic, deepseek, groq, ollama; openai_compatible covers any OpenAI-compatible endpoint (vLLM, LM Studio, llama.cpp, ...)
-config["deep_think_llm"] = "gpt-6-sol"    # Model for complex reasoning
-config["quick_think_llm"] = "gpt-6-luna"   # Model for quick tasks
+config["llm_provider"] = (
+    "openai"  # e.g. openai, google, anthropic, deepseek, groq, ollama; openai_compatible covers any OpenAI-compatible endpoint (vLLM, LM Studio, llama.cpp, ...)
+)
+config["deep_think_llm"] = "gpt-6-sol"  # Model for complex reasoning
+config["quick_think_llm"] = "gpt-6-luna"  # Model for quick tasks
 config["max_debate_rounds"] = 2
 
 ta = TradingAgentsGraph(debug=True, config=config)
@@ -319,11 +321,13 @@ By default the agents do not know what you hold, so their guidance is written fo
 ```python
 from tradingagents.portfolio import PortfolioContext
 
-portfolio = PortfolioContext.model_validate({
-    "cash": 25000.0,
-    "currency": "USD",
-    "positions": [{"ticker": "NVDA", "quantity": 120, "average_price": 150.0}],
-})
+portfolio = PortfolioContext.model_validate(
+    {
+        "cash": 25000.0,
+        "currency": "USD",
+        "positions": [{"ticker": "NVDA", "quantity": 120, "average_price": 150.0}],
+    }
+)
 _, decision = ta.propagate("NVDA", "2026-09-01", portfolio=portfolio)
 ```
 

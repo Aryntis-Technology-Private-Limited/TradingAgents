@@ -21,14 +21,16 @@ def _bare_graph(tmp_path):
     graph = object.__new__(TradingAgentsGraph)
     graph.config = {"memory_log_path": str(tmp_path / "trading_memory.md")}
     graph.memory_log = TradingMemoryLog(graph.config)
-    graph._log_state = lambda *a: None   # these tests are about the memory log
+    graph._log_state = lambda *a: None  # these tests are about the memory log
     return graph
 
 
 @pytest.mark.unit
 def test_record_decision_appends_a_pending_entry(tmp_path):
     graph = _bare_graph(tmp_path)
-    graph.record_decision("NVDA", "2026-01-10", {"final_trade_decision": "Rating: Buy\n\nBuy NVDA."})
+    graph.record_decision(
+        "NVDA", "2026-01-10", {"final_trade_decision": "Rating: Buy\n\nBuy NVDA."}
+    )
     entries = graph.memory_log.load_entries()
     assert [(e["ticker"], e["pending"], e["rating"]) for e in entries] == [("NVDA", True, "Buy")]
 
@@ -42,6 +44,7 @@ def test_record_decision_skips_a_run_without_a_decision(tmp_path):
 
 # --- the CLI path ----------------------------------------------------------------
 
+
 class _FakeGraph:
     """Records the lifecycle calls run_analysis makes."""
 
@@ -49,7 +52,7 @@ class _FakeGraph:
         self.calls = []
         self.graph = self
         self.propagator = self
-        self.resuming = resuming      # None: checkpointing off
+        self.resuming = resuming  # None: checkpointing off
         self._resuming = False
 
     def create_run_state(self, ticker, trade_date, asset_type="stock", portfolio=None):
@@ -57,7 +60,9 @@ class _FakeGraph:
         return {"messages": [], "company_of_interest": ticker}
 
     def record_decision(self, ticker, trade_date, final_state):
-        self.calls.append(("record_decision", ticker, trade_date, final_state.get("final_trade_decision")))
+        self.calls.append(
+            ("record_decision", ticker, trade_date, final_state.get("final_trade_decision"))
+        )
 
     def get_graph_args(self, callbacks=None):
         return {}
@@ -77,7 +82,14 @@ class _FakeGraph:
 
     def stream_run(self, graph_input, **kwargs):
         yield [], {"messages": [], "market_report": "M"}
-        yield [], {"messages": [], "final_trade_decision": "Rating: Buy\n\nBuy NVDA.", "final_rating": "Buy"}
+        yield (
+            [],
+            {
+                "messages": [],
+                "final_trade_decision": "Rating: Buy\n\nBuy NVDA.",
+                "final_rating": "Buy",
+            },
+        )
 
 
 class _NullLive:
@@ -127,13 +139,24 @@ def _run_cli(monkeypatch, tmp_path, fake):
     monkeypatch.setattr(cli_run, "create_layout", lambda: None)
     monkeypatch.setattr(cli_run, "update_display", lambda *a, **k: None)
     monkeypatch.setattr(cli_run, "Live", _NullLive)
-    monkeypatch.setattr(cli_run, "get_user_selections", lambda flags=None: {
-        "ticker": "NVDA", "analysis_date": "2026-01-10",
-        "analysts": [AnalystType.MARKET], "asset_type": "stock",
-    })
-    monkeypatch.setattr(cli_run, "_build_run_config", lambda selections, checkpoint: {
-        "data_cache_dir": str(tmp_path / "cache"), "results_dir": str(tmp_path / "results"),
-    })
+    monkeypatch.setattr(
+        cli_run,
+        "get_user_selections",
+        lambda flags=None: {
+            "ticker": "NVDA",
+            "analysis_date": "2026-01-10",
+            "analysts": [AnalystType.MARKET],
+            "asset_type": "stock",
+        },
+    )
+    monkeypatch.setattr(
+        cli_run,
+        "_build_run_config",
+        lambda selections, checkpoint: {
+            "data_cache_dir": str(tmp_path / "cache"),
+            "results_dir": str(tmp_path / "results"),
+        },
+    )
     monkeypatch.setattr(m.typer, "prompt", lambda *a, **k: "N")
     cli_run.run_analysis()
     return buffer
@@ -166,26 +189,52 @@ def test_the_cli_run_says_whether_it_resumed(tmp_path, monkeypatch, resuming, sa
 def test_a_run_without_checkpointing_says_nothing_about_resuming(tmp_path, monkeypatch):
     buffer = _run_cli(monkeypatch, tmp_path, _FakeGraph())
 
-    assert not any("resum" in text.lower() or "fresh" in text.lower() for _, _, text in buffer.messages)
+    assert not any(
+        "resum" in text.lower() or "fresh" in text.lower() for _, _, text in buffer.messages
+    )
 
 
 @pytest.mark.unit
 def test_recording_a_run_writes_its_state_log(tmp_path):
     """The CLI records a run through record_decision, so the state log is written there."""
     graph = object.__new__(TradingAgentsGraph)
-    graph.config = {"results_dir": str(tmp_path), "llm_provider": "openai", "deep_think_llm": "d",
-                    "quick_think_llm": "q", "max_debate_rounds": 1, "max_risk_discuss_rounds": 1,
-                    "output_language": "English", "data_vendors": {}, "tool_vendors": {}}
+    graph.config = {
+        "results_dir": str(tmp_path),
+        "llm_provider": "openai",
+        "deep_think_llm": "d",
+        "quick_think_llm": "q",
+        "max_debate_rounds": 1,
+        "max_risk_discuss_rounds": 1,
+        "output_language": "English",
+        "data_vendors": {},
+        "tool_vendors": {},
+    }
     graph.selected_analysts = ("market",)
     graph.memory_log = TradingMemoryLog({"memory_log_path": str(tmp_path / "m.md")})
-    state = {"company_of_interest": "NVDA", "trade_date": "2026-09-23", "market_report": "M",
-             "sentiment_report": "", "news_report": "", "fundamentals_report": "",
-             "investment_debate_state": {"bull_history": "", "bear_history": "", "history": "",
-                                         "current_response": ""},
-             "trader_investment_plan": "T", "investment_plan": "P",
-             "risk_debate_state": {"aggressive_history": "", "conservative_history": "",
-                                   "neutral_history": "", "history": ""},
-             "final_trade_decision": "**Rating**: Hold", "final_rating": "Hold"}
+    state = {
+        "company_of_interest": "NVDA",
+        "trade_date": "2026-09-23",
+        "market_report": "M",
+        "sentiment_report": "",
+        "news_report": "",
+        "fundamentals_report": "",
+        "investment_debate_state": {
+            "bull_history": "",
+            "bear_history": "",
+            "history": "",
+            "current_response": "",
+        },
+        "trader_investment_plan": "T",
+        "investment_plan": "P",
+        "risk_debate_state": {
+            "aggressive_history": "",
+            "conservative_history": "",
+            "neutral_history": "",
+            "history": "",
+        },
+        "final_trade_decision": "**Rating**: Hold",
+        "final_rating": "Hold",
+    }
 
     graph.record_decision("NVDA", "2026-09-23", state)
 

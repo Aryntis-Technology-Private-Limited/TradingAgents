@@ -157,8 +157,8 @@ class TestOpenRouterDeepSeekNamespace:
         # A third-party publisher whose model name WOULD match a deepseek pattern
         # must stay _DEFAULT: proves we strip only "deepseek/", not any "*/".
         caps = get_capabilities("tngtech/deepseek-v4-flash")
-        assert caps.supports_tool_choice is True         # not thinking
-        assert caps.supports_json_schema is True          # _DEFAULT
+        assert caps.supports_tool_choice is True  # not thinking
+        assert caps.supports_json_schema is True  # _DEFAULT
 
     def test_native_ids_unchanged(self):
         assert get_capabilities("deepseek-v4-flash").supports_tool_choice is False

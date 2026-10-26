@@ -19,11 +19,20 @@ def test_every_select_llm_provider_choice_has_an_entry():
     # stay in lockstep. Region-specific keys (qwen-cn / minimax-cn / glm-cn)
     # are reached via the secondary region prompt, so they must also be present.
     expected = {
-        "openai", "google", "anthropic", "xai", "deepseek",
-        "qwen", "qwen-cn",
-        "glm", "glm-cn",
-        "minimax", "minimax-cn",
-        "openrouter", "azure", "ollama",
+        "openai",
+        "google",
+        "anthropic",
+        "xai",
+        "deepseek",
+        "qwen",
+        "qwen-cn",
+        "glm",
+        "glm-cn",
+        "minimax",
+        "minimax-cn",
+        "openrouter",
+        "azure",
+        "ollama",
     }
     assert expected.issubset(PROVIDER_API_KEY_ENV.keys())
 
@@ -31,17 +40,17 @@ def test_every_select_llm_provider_choice_has_an_entry():
 @pytest.mark.parametrize(
     "provider,env_var",
     [
-        ("openai",     "OPENAI_API_KEY"),
-        ("anthropic",  "ANTHROPIC_API_KEY"),
-        ("google",     "GOOGLE_API_KEY"),
-        ("azure",      "AZURE_OPENAI_API_KEY"),
-        ("xai",        "XAI_API_KEY"),
-        ("deepseek",   "DEEPSEEK_API_KEY"),
-        ("qwen",       "DASHSCOPE_API_KEY"),
-        ("qwen-cn",    "DASHSCOPE_CN_API_KEY"),
-        ("glm",        "ZHIPU_API_KEY"),
-        ("glm-cn",     "ZHIPU_CN_API_KEY"),
-        ("minimax",    "MINIMAX_API_KEY"),
+        ("openai", "OPENAI_API_KEY"),
+        ("anthropic", "ANTHROPIC_API_KEY"),
+        ("google", "GOOGLE_API_KEY"),
+        ("azure", "AZURE_OPENAI_API_KEY"),
+        ("xai", "XAI_API_KEY"),
+        ("deepseek", "DEEPSEEK_API_KEY"),
+        ("qwen", "DASHSCOPE_API_KEY"),
+        ("qwen-cn", "DASHSCOPE_CN_API_KEY"),
+        ("glm", "ZHIPU_API_KEY"),
+        ("glm-cn", "ZHIPU_CN_API_KEY"),
+        ("minimax", "MINIMAX_API_KEY"),
         ("minimax-cn", "MINIMAX_CN_API_KEY"),
         ("openrouter", "OPENROUTER_API_KEY"),
     ],
@@ -70,6 +79,7 @@ def test_case_insensitive_lookup():
 def prompts():
     """cli.prompts, which reads the environment when it is called."""
     import cli.prompts as prompts_module
+
     return prompts_module
 
 

@@ -4,6 +4,7 @@ A single transient 429 burst used to kill an otherwise-healthy multi-agent run
 because each provider SDK's max_retries (default 2) was not exposed. This adds an
 opt-in llm_max_retries knob forwarded to every provider chat client.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -71,6 +72,7 @@ def test_invalid_config_value_fails_loudly():
 
 
 # --- env overlay -----------------------------------------------------------
+
 
 def _config_with_env(monkeypatch, **overrides):
     """The defaults as the environment given here would set them."""

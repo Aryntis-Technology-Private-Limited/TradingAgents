@@ -41,7 +41,9 @@ def test_flat_book_says_no_position_rather_than_omitting_it():
 
 @pytest.mark.unit
 def test_a_ticker_held_under_another_spelling_is_matched():
-    text = PortfolioContext.model_validate({"positions": [{"ticker": "aapl", "quantity": 5}]}).render("AAPL")
+    text = PortfolioContext.model_validate(
+        {"positions": [{"ticker": "aapl", "quantity": 5}]}
+    ).render("AAPL")
     assert "No current position" not in text and "5" in text
 
 
@@ -54,7 +56,9 @@ def test_absent_context_is_reported_as_not_provided():
 
 @pytest.mark.unit
 def test_rendered_context_reaches_the_agents_from_state():
-    block = get_portfolio_context_from_state({"portfolio_context": "Portfolio: flat", "company_of_interest": "AAPL"})
+    block = get_portfolio_context_from_state(
+        {"portfolio_context": "Portfolio: flat", "company_of_interest": "AAPL"}
+    )
     assert block == "Portfolio: flat"
 
 
@@ -75,14 +79,18 @@ def test_load_reads_a_valid_file(tmp_path):
 
 # --- threading through the graph --------------------------------------------
 
+
 def _bare_graph(tmp_path):
     from tradingagents.graph.propagation import Propagator
     from tradingagents.graph.trading_graph import TradingAgentsGraph
     from tradingagents.memory import TradingMemoryLog
 
     graph = object.__new__(TradingAgentsGraph)
-    graph.config = {"memory_log_path": str(tmp_path / "m.md"), "max_debate_rounds": 1,
-                    "max_risk_discuss_rounds": 1}
+    graph.config = {
+        "memory_log_path": str(tmp_path / "m.md"),
+        "max_debate_rounds": 1,
+        "max_risk_discuss_rounds": 1,
+    }
     graph.memory_log = TradingMemoryLog(graph.config)
     graph.propagator = Propagator()
     graph.selected_analysts = ["market"]
@@ -95,7 +103,9 @@ def _bare_graph(tmp_path):
 @pytest.mark.unit
 def test_create_run_state_renders_the_portfolio_once(tmp_path):
     graph = _bare_graph(tmp_path)
-    state = graph.create_run_state("AAPL", "2026-08-14", portfolio=PortfolioContext.model_validate(HOLDING))
+    state = graph.create_run_state(
+        "AAPL", "2026-08-14", portfolio=PortfolioContext.model_validate(HOLDING)
+    )
     assert "120" in state["portfolio_context"]
     assert graph.create_run_state("AAPL", "2026-08-14")["portfolio_context"] == ""
 
@@ -110,13 +120,16 @@ def test_checkpoint_signature_changes_with_the_portfolio(tmp_path):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("module, factory", [
-    ("tradingagents.agents.trader.trader", "create_trader"),
-    ("tradingagents.agents.managers.portfolio_manager", "create_portfolio_manager"),
-    ("tradingagents.agents.risk_mgmt.aggressive_debator", "create_aggressive_debator"),
-    ("tradingagents.agents.risk_mgmt.conservative_debator", "create_conservative_debator"),
-    ("tradingagents.agents.risk_mgmt.neutral_debator", "create_neutral_debator"),
-])
+@pytest.mark.parametrize(
+    "module, factory",
+    [
+        ("tradingagents.agents.trader.trader", "create_trader"),
+        ("tradingagents.agents.managers.portfolio_manager", "create_portfolio_manager"),
+        ("tradingagents.agents.risk_mgmt.aggressive_debator", "create_aggressive_debator"),
+        ("tradingagents.agents.risk_mgmt.conservative_debator", "create_conservative_debator"),
+        ("tradingagents.agents.risk_mgmt.neutral_debator", "create_neutral_debator"),
+    ],
+)
 def test_decision_agents_see_the_portfolio(module, factory, monkeypatch):
     """The prompt each decision agent sends carries the portfolio block."""
     import importlib
@@ -128,26 +141,43 @@ def test_decision_agents_see_the_portfolio(module, factory, monkeypatch):
         def invoke(self, prompt, *a, **k):
             seen.append(prompt if isinstance(prompt, str) else json.dumps(str(prompt)))
             from langchain_core.messages import AIMessage
+
             return AIMessage("Rating: Hold\n\nnothing to do")
 
         def with_structured_output(self, *a, **k):
             raise NotImplementedError  # force the free-text path
 
     state = {
-        "company_of_interest": "AAPL", "trade_date": "2026-08-14", "asset_type": "stock",
-        "instrument_context": "", "market_report": "M", "sentiment_report": "S",
-        "news_report": "N", "fundamentals_report": "F", "investment_plan": "P",
-        "trader_investment_plan": "T", "past_context": "",
+        "company_of_interest": "AAPL",
+        "trade_date": "2026-08-14",
+        "asset_type": "stock",
+        "instrument_context": "",
+        "market_report": "M",
+        "sentiment_report": "S",
+        "news_report": "N",
+        "fundamentals_report": "F",
+        "investment_plan": "P",
+        "trader_investment_plan": "T",
+        "past_context": "",
         "portfolio_context": "PORTFOLIO_BLOCK_MARKER",
         "investment_debate_state": {"history": "", "count": 0},
-        "risk_debate_state": {"history": "", "latest_speaker": "", "count": 0,
-                              "aggressive_history": "", "conservative_history": "", "neutral_history": "",
-                              "current_aggressive_response": "", "current_conservative_response": "",
-                              "current_neutral_response": ""},
+        "risk_debate_state": {
+            "history": "",
+            "latest_speaker": "",
+            "count": 0,
+            "aggressive_history": "",
+            "conservative_history": "",
+            "neutral_history": "",
+            "current_aggressive_response": "",
+            "current_conservative_response": "",
+            "current_neutral_response": "",
+        },
     }
     node = getattr(mod, factory)(_LLM())
     node(state)
-    assert any("PORTFOLIO_BLOCK_MARKER" in p for p in seen), f"{factory} prompt lacks the portfolio block"
+    assert any("PORTFOLIO_BLOCK_MARKER" in p for p in seen), (
+        f"{factory} prompt lacks the portfolio block"
+    )
 
 
 @pytest.mark.unit
@@ -155,6 +185,7 @@ def test_research_team_stays_blind_to_the_portfolio():
     import inspect
 
     from tradingagents.agents.researchers import bear_researcher, bull_researcher
+
     for mod in (bull_researcher, bear_researcher):
         assert "portfolio_context" not in inspect.getsource(mod)
 
@@ -169,18 +200,30 @@ def test_completed_run_clears_the_checkpoint_it_wrote(tmp_path, monkeypatch):
     import tradingagents.graph.trading_graph as tg
 
     graph = _bare_graph(tmp_path)
-    graph.config.update({"checkpoint_enabled": True, "data_cache_dir": str(tmp_path),
-                         "results_dir": str(tmp_path)})
+    graph.config.update(
+        {"checkpoint_enabled": True, "data_cache_dir": str(tmp_path), "results_dir": str(tmp_path)}
+    )
     graph.debug = False
     graph._resuming = False
     graph.propagator.get_graph_args = lambda callbacks=None: {}
     graph._log_state = lambda *a, **k: None
-    graph.graph = type("G", (), {"invoke": lambda self, i, **k: {"final_trade_decision": "Rating: Hold\n\nx", "final_rating": "Hold"}})()
+    graph.graph = type(
+        "G",
+        (),
+        {
+            "invoke": lambda self, i, **k: {
+                "final_trade_decision": "Rating: Hold\n\nx",
+                "final_rating": "Hold",
+            }
+        },
+    )()
     book = PortfolioContext.model_validate(HOLDING)
 
     written = graph._run_signature("stock", book)  # what begin_checkpoint keys on
     cleared = []
-    monkeypatch.setattr(tg, "clear_checkpoint", lambda d, t, dt, signature: cleared.append(signature))
+    monkeypatch.setattr(
+        tg, "clear_checkpoint", lambda d, t, dt, signature: cleared.append(signature)
+    )
 
     graph._run_graph("AAPL", "2026-08-14", "stock", checkpoint_thread_id=None, portfolio=book)
 
@@ -201,7 +244,9 @@ def test_research_layer_sizes_against_a_standard_allocation():
 @pytest.mark.unit
 def test_partial_portfolio_states_only_what_it_was_given():
     """Cash omitted is not cash zero; the line is absent rather than invented."""
-    text = PortfolioContext.model_validate({"positions": [{"ticker": "AAPL", "quantity": 5}]}).render("AAPL")
+    text = PortfolioContext.model_validate(
+        {"positions": [{"ticker": "AAPL", "quantity": 5}]}
+    ).render("AAPL")
     assert "Cash" not in text
     assert "5" in text
 

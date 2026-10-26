@@ -59,7 +59,9 @@ class ResolveInstrumentIdentityTests(unittest.TestCase):
         # A long process (a backtest) must not run every later cell without an
         # identity because one request failed.
         with patch("tradingagents.dataflows.vendors.yahoo.market.yf.Ticker") as mock:
-            type(mock.return_value).info = property(lambda self: (_ for _ in ()).throw(TimeoutError()))
+            type(mock.return_value).info = property(
+                lambda self: (_ for _ in ()).throw(TimeoutError())
+            )
             self.assertEqual(resolve_instrument_identity("TOTDY"), {})
             type(mock.return_value).info = {"longName": "TOTO LTD."}
             self.assertEqual(resolve_instrument_identity("TOTDY")["company_name"], "TOTO LTD.")
@@ -83,7 +85,8 @@ class BuildInstrumentContextTests(unittest.TestCase):
 
     def test_injects_resolved_identity(self):
         context = build_instrument_context(
-            "TOTDY", "stock",
+            "TOTDY",
+            "stock",
             {
                 "company_name": "TOTO LTD.",
                 "sector": "Industrials",
@@ -97,9 +100,7 @@ class BuildInstrumentContextTests(unittest.TestCase):
         self.assertIn("Do not substitute a different company", context)
 
     def test_crypto_uses_name_label_and_keeps_hint(self):
-        context = build_instrument_context(
-            "BTC-USD", "crypto", {"company_name": "Bitcoin USD"}
-        )
+        context = build_instrument_context("BTC-USD", "crypto", {"company_name": "Bitcoin USD"})
         self.assertIn("Name: Bitcoin USD", context)
         self.assertIn("crypto asset rather than a company", context)
 

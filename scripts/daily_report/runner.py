@@ -35,13 +35,11 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from tradingagents import default_config as config_module
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.dataflows.date_window import get_current_date
-from tradingagents.dataflows.symbols import safe_ticker_component
-
 from scripts.daily_report import config as daily_config
 from scripts.daily_report.nifty_sensex import both
+from tradingagents import default_config as config_module
+from tradingagents.dataflows.date_window import get_current_date
+from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 # Tickers whose NSE/BSE spelling carries a character ``safe_ticker_component``
 # refuses (``&`` in M&M.NS, ``-`` is fine) still need a directory to save
@@ -54,6 +52,7 @@ _PATH_SAFE_RE = re.compile(r"[^A-Za-z0-9._\-+^=]")
 def _safe_name(ticker: str) -> str:
     """A directory name for ``ticker``: safe against traversal, readable."""
     return _PATH_SAFE_RE.sub("_", ticker.upper()).replace(" ", "")
+
 
 def _selected_analysts() -> list[str]:
     """Which analysts the daily sweep runs: DAILY_REPORT_ANALYSTS in .env,
@@ -106,7 +105,11 @@ def _prune_old_daily(daily_root: Path, today: str) -> list[str]:
     if not daily_root.is_dir():
         return pruned
     for child in daily_root.iterdir():
-        if child.is_dir() and re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name) and child.name < keep_from:
+        if (
+            child.is_dir()
+            and re.fullmatch(r"\d{4}-\d{2}-\d{2}", child.name)
+            and child.name < keep_from
+        ):
             shutil.rmtree(child)
             pruned.append(child.name)
     return pruned
@@ -121,22 +124,25 @@ def run() -> int:
 
     pruned = _prune_old_daily(out_dir.parent, today)
     if pruned:
-        print(f"[daily-report] pruned old daily folders (no archive): {', '.join(pruned)}", flush=True)
+        print(
+            f"[daily-report] pruned old daily folders (no archive): {', '.join(pruned)}", flush=True
+        )
 
     lists = both()
     tickers = lists["nifty50"] + lists["sensex"]
     total = len(tickers)
-    print(f"[daily-report] {today}: {len(lists['nifty50'])} Nifty 50 + "
-          f"{len(lists['sensex'])} SENSEX = {total} tickers -> {out_dir}",
-          flush=True)
+    print(
+        f"[daily-report] {today}: {len(lists['nifty50'])} Nifty 50 + "
+        f"{len(lists['sensex'])} SENSEX = {total} tickers -> {out_dir}",
+        flush=True,
+    )
 
-    graph = TradingAgentsGraph(_selected_analysts(), config=config)
+    TradingAgentsGraph(_selected_analysts(), config=config)
     workers = _sweep_workers()
     # One graph per worker slot: a LangGraph graph is stateful across one
     # propagate() call and must not be shared across threads. With 5 slots
     # (the API quota), 5 tickers run at a time.
-    graphs = [TradingAgentsGraph(_selected_analysts(), config=config)
-              for _ in range(workers)]
+    graphs = [TradingAgentsGraph(_selected_analysts(), config=config) for _ in range(workers)]
 
     def _process_one(slot: int, index: int, ticker: str) -> tuple[str, str, str | None]:
         """Analyze one ticker on its slot's graph. Returns
@@ -162,8 +168,7 @@ def run() -> int:
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_process_one, i, i, ticker): i
-            for i, ticker in enumerate(tickers, 1)
+            pool.submit(_process_one, i, i, ticker): i for i, ticker in enumerate(tickers, 1)
         }
         for fut in as_completed(futures):
             ticker, status, reason = fut.result()
@@ -179,8 +184,10 @@ def run() -> int:
     # feed the next run; a settlement failure is not a sweep failure.
     print("\n=== daily-report summary ===")
     print(f"date: {today}")
-    print(f"tickers: {total} · done {done_count} · "
-          f"skipped (already run) {skipped} · failed {len(failures)}")
+    print(
+        f"tickers: {total} · done {done_count} · "
+        f"skipped (already run) {skipped} · failed {len(failures)}"
+    )
     print(f"sweep parallelism: {workers} slot(s)")
     print(f"reports: {out_dir}")
     for ticker, reason in failures:

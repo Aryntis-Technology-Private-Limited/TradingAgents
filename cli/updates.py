@@ -48,6 +48,7 @@ def enabled() -> bool:
 
 # --- the cache and the check -------------------------------------------------------
 
+
 def read_cache() -> dict:
     """The cache, keeping only fields of the shape this version writes."""
     try:
@@ -122,6 +123,7 @@ def start_background_refresh() -> None:
 
 # --- what is shown ---------------------------------------------------------------
 
+
 def _version(text) -> Version | None:
     try:
         return Version(str(text))
@@ -145,12 +147,18 @@ def _applies(notice: dict, running: Version, today: date) -> bool:
     if expires is None:
         return True
     try:
-        return isinstance(expires, str) and bool(DATE.fullmatch(expires)) and date.fromisoformat(expires) >= today
+        return (
+            isinstance(expires, str)
+            and bool(DATE.fullmatch(expires))
+            and date.fromisoformat(expires) >= today
+        )
     except ValueError:
         return False
 
 
-def messages(cache: dict, running: str, upgrade: Callable[[], str | None] = lambda: None) -> list[str]:
+def messages(
+    cache: dict, running: str, upgrade: Callable[[], str | None] = lambda: None
+) -> list[str]:
     """The lines to show: a newer release with its upgrade command (``upgrade()``, asked only
     when there is one), then the notices for this version."""
     current = _version(running)
@@ -160,8 +168,10 @@ def messages(cache: dict, running: str, upgrade: Callable[[], str | None] = lamb
     latest = cache.get("latest") or {}
     newest = _version(latest.get("version"))
     if newest is not None and newest > current:
-        lines.append(f"TradingAgents {_plain(latest['version'])} is available (you have {_plain(running)}): "
-                     f"{_plain(latest.get('summary'))}")
+        lines.append(
+            f"TradingAgents {_plain(latest['version'])} is available (you have {_plain(running)}): "
+            f"{_plain(latest.get('summary'))}"
+        )
         if latest.get("url"):
             lines.append(_plain(latest["url"]))
         command = upgrade()
@@ -169,11 +179,19 @@ def messages(cache: dict, running: str, upgrade: Callable[[], str | None] = lamb
             lines.append(f"Upgrade: {_plain(command)}")
     today = datetime.now(UTC).date()
     for notice in cache.get("notices") or []:
-        if not (isinstance(notice, dict) and isinstance(notice.get("message"), str) and _plain(notice["message"])
-                and _applies(notice, current, today)):
+        if not (
+            isinstance(notice, dict)
+            and isinstance(notice.get("message"), str)
+            and _plain(notice["message"])
+            and _applies(notice, current, today)
+        ):
             continue
         url = notice.get("url")
-        link = url if isinstance(url, str) and url.lower().startswith(("http://", "https://")) else None
+        link = (
+            url
+            if isinstance(url, str) and url.lower().startswith(("http://", "https://"))
+            else None
+        )
         lines.append(_plain(notice["message"]) + (f" {_plain(link)}" if link else ""))
     return lines
 
@@ -223,7 +241,9 @@ def upgrade_command(dist=None) -> str | None:
     # so on Windows no command is offered for them (a half-working notice is
     # worse than a quiet one).
     python = shlex.quote(sys.executable)
-    install = f"uv pip install --python {python}" if installer == "uv" else f"{python} -m pip install"
+    install = (
+        f"uv pip install --python {python}" if installer == "uv" else f"{python} -m pip install"
+    )
     if "vcs_info" in direct:
         return f"{install} -U git+{direct['url']}"
     if os.name == "nt":
@@ -247,5 +267,7 @@ def show(console) -> None:
 
     lines = messages(read_cache(), running=__version__, upgrade=upgrade_command)
     if lines:
-        console.print(Panel(Text("\n".join(lines)), border_style="cyan", padding=(1, 2), title="What's new"))
+        console.print(
+            Panel(Text("\n".join(lines)), border_style="cyan", padding=(1, 2), title="What's new")
+        )
         console.print()

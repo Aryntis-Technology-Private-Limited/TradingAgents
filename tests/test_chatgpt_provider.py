@@ -22,17 +22,25 @@ from tradingagents.llm_clients.openai_client import ChatGPTPlanChatOpenAI
 
 @pytest.fixture
 def signed_in(monkeypatch):
-    monkeypatch.setattr(chatgpt_auth, "credential", lambda: (lambda: "plan-token"))
+    monkeypatch.setattr(chatgpt_auth, "credential", lambda: lambda: "plan-token")
     monkeypatch.setattr(chatgpt_auth, "access_token", lambda: "plan-token")
     monkeypatch.setattr(chatgpt_auth, "signed_in_as", lambda: "a@example.com")
 
 
 def _llm(**kwargs):
-    config = {**default_config.DEFAULT_CONFIG, "llm_provider": "chatgpt", "openai_reasoning_effort": "high", **kwargs}
-    return factory.create_llm_client("chatgpt", "gpt-5.5", **factory.build_llm_kwargs(config)).get_llm()
+    config = {
+        **default_config.DEFAULT_CONFIG,
+        "llm_provider": "chatgpt",
+        "openai_reasoning_effort": "high",
+        **kwargs,
+    }
+    return factory.create_llm_client(
+        "chatgpt", "gpt-5.5", **factory.build_llm_kwargs(config)
+    ).get_llm()
 
 
 # --- the client ------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_the_plan_is_reached_with_the_sign_in_never_an_api_key(signed_in, monkeypatch):
@@ -41,7 +49,12 @@ def test_the_plan_is_reached_with_the_sign_in_never_an_api_key(signed_in, monkey
     assert isinstance(llm, ChatGPTPlanChatOpenAI)
     assert llm.openai_api_base == "https://api.openai.com/v1"
     assert llm.openai_api_key() == "plan-token"
-    assert (llm.use_responses_api, llm.streaming, llm.store, llm.reasoning_effort) == (True, True, False, "high")
+    assert (llm.use_responses_api, llm.streaming, llm.store, llm.reasoning_effort) == (
+        True,
+        True,
+        False,
+        "high",
+    )
 
 
 @pytest.mark.unit
@@ -52,7 +65,9 @@ def test_system_instructions_go_as_developer_and_refused_settings_are_dropped(si
     assert [item["role"] for item in payload["input"]] == ["developer", "user"]
     assert not {"temperature", "max_output_tokens"} & payload.keys()
     assert payload["stream"] is True and payload["store"] is False
-    assert "does not accept temperature" in caplog.text and "does not accept max_tokens" in caplog.text
+    assert (
+        "does not accept temperature" in caplog.text and "does not accept max_tokens" in caplog.text
+    )
 
 
 @pytest.mark.unit
@@ -65,9 +80,15 @@ def test_a_run_without_a_sign_in_stops_before_any_request(monkeypatch, tmp_path)
 @pytest.mark.unit
 def test_a_chatgpt_tier_beside_an_openai_tier_keeps_each_credential(signed_in, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    config = {**default_config.DEFAULT_CONFIG, "llm_provider": "openai", "backend_url": "https://api.openai.com/v1",
-              "quick_think_provider": "chatgpt", "quick_think_llm": "gpt-5.5", "deep_think_llm": "gpt-6-sol",
-              "openai_reasoning_effort": "low"}
+    config = {
+        **default_config.DEFAULT_CONFIG,
+        "llm_provider": "openai",
+        "backend_url": "https://api.openai.com/v1",
+        "quick_think_provider": "chatgpt",
+        "quick_think_llm": "gpt-5.5",
+        "deep_think_llm": "gpt-6-sol",
+        "openai_reasoning_effort": "low",
+    }
     quick = factory.create_tier_client(config, "quick").get_llm()
     deep = factory.create_tier_client(config, "deep").get_llm()
     assert isinstance(quick, ChatGPTPlanChatOpenAI) and quick.reasoning_effort == "low"
@@ -77,6 +98,7 @@ def test_a_chatgpt_tier_beside_an_openai_tier_keeps_each_credential(signed_in, m
 
 
 # --- the CLI ---------------------------------------------------------------------
+
 
 def _menu(answers):
     """questionary.select stand-in: records each menu and answers in turn."""
@@ -91,12 +113,18 @@ def _menu(answers):
 
 @pytest.mark.unit
 def test_chatgpt_is_offered_under_subscription_after_anthropic():
-    shown, select = _menu([lambda cs: next(c.value for c in cs if c.title.startswith("Subscription")),
-                           lambda cs: cs[0].value])
+    shown, select = _menu(
+        [
+            lambda cs: next(c.value for c in cs if c.title.startswith("Subscription")),
+            lambda cs: cs[0].value,
+        ]
+    )
     with mock.patch("cli.prompts.questionary.select", select):
         provider, url = prompts.select_llm_provider()
     titles = shown[0][1]
-    assert titles.index("Anthropic") + 1 == titles.index(next(t for t in titles if t.startswith("Subscription")))
+    assert titles.index("Anthropic") + 1 == titles.index(
+        next(t for t in titles if t.startswith("Subscription"))
+    )
     assert not any(t.startswith("ChatGPT") for t in titles)
     assert shown[1][1] == ["ChatGPT (Plus or Pro plan)"]
     assert (provider, url) == ("chatgpt", "https://api.openai.com/v1")
@@ -118,8 +146,11 @@ def test_a_signed_in_plan_is_named_before_the_run(signed_in, capsys):
 
 def _expired(monkeypatch):
     def refuse():
-        raise chatgpt_auth.ChatGPTAuthError("Your ChatGPT sign-in could not be renewed (invalid_grant); "
-                                            "run `tradingagents login chatgpt` again.")
+        raise chatgpt_auth.ChatGPTAuthError(
+            "Your ChatGPT sign-in could not be renewed (invalid_grant); "
+            "run `tradingagents login chatgpt` again."
+        )
+
     monkeypatch.setattr(chatgpt_auth, "access_token", refuse)
 
 
@@ -138,7 +169,9 @@ def test_an_interactive_run_signs_in_again_through_the_login_command(monkeypatch
     monkeypatch.setattr(chatgpt_auth, "signed_in_as", lambda: "a@example.com")
     monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: True))
     ran = []
-    monkeypatch.setattr(prompts.subprocess, "run", lambda argv: ran.append(argv) or SimpleNamespace(returncode=0))
+    monkeypatch.setattr(
+        prompts.subprocess, "run", lambda argv: ran.append(argv) or SimpleNamespace(returncode=0)
+    )
     prompts.ensure_signed_in("chatgpt")
     assert ran[0][1:] == ["-P", "-m", "cli.main", "login", "chatgpt"]
     assert "Using your ChatGPT plan" in capsys.readouterr().out
@@ -159,14 +192,24 @@ def test_each_tier_s_provider_is_signed_in_or_keyed(monkeypatch):
 @pytest.mark.unit
 def test_the_plan_s_listed_models_are_offered_in_openai_s_order(signed_in, monkeypatch):
     monkeypatch.setattr(chatgpt_auth, "access_token", lambda: "plan-token")
-    body = {"models": [
-        {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "list", "priority": 9},
-        {"slug": "internal", "display_name": "Internal", "visibility": "hide", "priority": 0},
-        {"slug": "gpt-6-astra", "display_name": "GPT-6-Astra", "visibility": "list", "priority": 2},
-    ]}
+    body = {
+        "models": [
+            {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "list", "priority": 9},
+            {"slug": "internal", "display_name": "Internal", "visibility": "hide", "priority": 0},
+            {
+                "slug": "gpt-6-astra",
+                "display_name": "GPT-6-Astra",
+                "visibility": "list",
+                "priority": 2,
+            },
+        ]
+    }
     response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: body)
     with mock.patch("requests.get", return_value=response) as get:
-        assert chatgpt_auth.list_models() == [("GPT-6-Astra", "gpt-6-astra"), ("GPT-5.5", "gpt-5.5")]
+        assert chatgpt_auth.list_models() == [
+            ("GPT-6-Astra", "gpt-6-astra"),
+            ("GPT-5.5", "gpt-5.5"),
+        ]
     assert get.call_args.kwargs["headers"] == {"Authorization": "Bearer plan-token"}
 
 
@@ -184,14 +227,21 @@ def test_api_organization_and_project_do_not_travel_with_the_sign_in(signed_in, 
 def test_a_remembered_plan_model_is_offered_again():
     from cli.prefs import sanitize
 
-    kept = sanitize({"llm_provider": "chatgpt", "quick_think_llm": "gpt-5.5", "deep_think_llm": "gpt-6-astra"}, "stock")
+    kept = sanitize(
+        {"llm_provider": "chatgpt", "quick_think_llm": "gpt-5.5", "deep_think_llm": "gpt-6-astra"},
+        "stock",
+    )
     assert (kept["quick_think_llm"], kept["deep_think_llm"]) == ("gpt-5.5", "gpt-6-astra")
 
 
 @pytest.mark.unit
 def test_a_malformed_model_entry_does_not_hide_the_others(signed_in):
-    body = {"models": [{"display_name": "No slug", "visibility": "list"},
-                       {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "list"}]}
+    body = {
+        "models": [
+            {"display_name": "No slug", "visibility": "list"},
+            {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "list"},
+        ]
+    }
     response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: body)
     with mock.patch("requests.get", return_value=response):
         assert chatgpt_auth.list_models() == [("GPT-5.5", "gpt-5.5")]
@@ -200,28 +250,38 @@ def test_a_malformed_model_entry_does_not_hide_the_others(signed_in):
 @pytest.mark.unit
 def test_an_unreachable_openai_stops_the_run_without_a_new_sign_in(monkeypatch, capsys):
     def unreachable():
-        raise chatgpt_auth.ChatGPTUnreachable("Could not reach OpenAI to renew your ChatGPT sign-in; try again.")
+        raise chatgpt_auth.ChatGPTUnreachable(
+            "Could not reach OpenAI to renew your ChatGPT sign-in; try again."
+        )
 
     monkeypatch.setattr(chatgpt_auth, "access_token", unreachable)
     monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(prompts.subprocess, "run", lambda argv: pytest.fail("offered a new sign-in"))
+    monkeypatch.setattr(
+        prompts.subprocess, "run", lambda argv: pytest.fail("offered a new sign-in")
+    )
     with pytest.raises(typer.Exit):
         prompts.ensure_signed_in("chatgpt")
     assert "try again" in capsys.readouterr().out
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("main, tier_provider, tier_url, backend_url", [
-    ("chatgpt", None, None, "http://localhost:8000/v1"),          # the run's own endpoint
-    ("openai", "chatgpt", "http://relay.example/v1", None),        # a chatgpt tier's endpoint
-])
-def test_a_plan_pointed_at_another_endpoint_stops_before_the_run(monkeypatch, capsys, main, tier_provider,
-                                                                  tier_url, backend_url):
+@pytest.mark.parametrize(
+    "main, tier_provider, tier_url, backend_url",
+    [
+        ("chatgpt", None, None, "http://localhost:8000/v1"),  # the run's own endpoint
+        ("openai", "chatgpt", "http://relay.example/v1", None),  # a chatgpt tier's endpoint
+    ],
+)
+def test_a_plan_pointed_at_another_endpoint_stops_before_the_run(
+    monkeypatch, capsys, main, tier_provider, tier_url, backend_url
+):
     monkeypatch.setitem(selections.DEFAULT_CONFIG, "quick_think_provider", tier_provider)
     monkeypatch.setitem(selections.DEFAULT_CONFIG, "quick_think_backend_url", tier_url)
     monkeypatch.setitem(selections.DEFAULT_CONFIG, "deep_think_provider", None)
     monkeypatch.setenv("TRADINGAGENTS_QUICK_THINK_LLM", "gpt-6-luna")
-    monkeypatch.setattr(selections, "ensure_signed_in", lambda p: pytest.fail("checked the sign-in first"))
+    monkeypatch.setattr(
+        selections, "ensure_signed_in", lambda p: pytest.fail("checked the sign-in first")
+    )
     with pytest.raises(typer.Exit):
         selections._check_tier_providers(main, backend_url)
     assert "only connects to https://api.openai.com/v1" in " ".join(capsys.readouterr().out.split())
@@ -229,8 +289,9 @@ def test_a_plan_pointed_at_another_endpoint_stops_before_the_run(monkeypatch, ca
 
 @pytest.mark.unit
 def test_a_remembered_openrouter_model_is_preselected(monkeypatch):
-    monkeypatch.setattr(prompts, "_fetch_openrouter_models",
-                        lambda: [("A", "openai/a"), ("B", "anthropic/b")])
+    monkeypatch.setattr(
+        prompts, "_fetch_openrouter_models", lambda: [("A", "openai/a"), ("B", "anthropic/b")]
+    )
     shown, select = _menu([lambda cs: cs[1].value])
     with mock.patch("cli.prompts.questionary.select", select):
         assert prompts.select_openrouter_model("deep", default="anthropic/b") == "anthropic/b"
@@ -242,4 +303,5 @@ def test_the_chatgpt_plan_is_the_only_provider_signed_in_to():
     # `login`, `logout` and the pre-run check are wired to the ChatGPT sign-in; a
     # second signed-in provider needs its own sign-in wired into them first.
     from tradingagents.llm_clients.openai_client import SIGNED_IN_PROVIDERS
+
     assert SIGNED_IN_PROVIDERS == ("chatgpt",)

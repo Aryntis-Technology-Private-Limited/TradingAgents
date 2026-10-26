@@ -14,10 +14,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-
-import pytest
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
@@ -35,8 +34,14 @@ def _b64(raw: bytes) -> str:
 
 
 def _id_token(key=KEY, **claims) -> str:
-    payload = {"iss": auth.ISSUER, "aud": CLIENT, "sub": SUBJECT, "email": "a@example.com",
-               "exp": time.time() + 3600, **claims}
+    payload = {
+        "iss": auth.ISSUER,
+        "aud": CLIENT,
+        "sub": SUBJECT,
+        "email": "a@example.com",
+        "exp": time.time() + 3600,
+        **claims,
+    }
     head = _b64(json.dumps({"alg": "RS256", "kid": "k1"}).encode())
     body = _b64(json.dumps(payload).encode())
     signature = key.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
@@ -58,8 +63,16 @@ def _private(path) -> bool:
 
 def _jwks():
     numbers = KEY.public_key().public_numbers()
-    return {"keys": [{"kid": "k1", "kty": "RSA", "e": _b64(numbers.e.to_bytes(3, "big")),
-                      "n": _b64(numbers.n.to_bytes(256, "big"))}]}
+    return {
+        "keys": [
+            {
+                "kid": "k1",
+                "kty": "RSA",
+                "e": _b64(numbers.e.to_bytes(3, "big")),
+                "n": _b64(numbers.n.to_bytes(256, "big")),
+            }
+        ]
+    }
 
 
 class _Response:
@@ -95,7 +108,7 @@ class FakeOpenAI:
             return _Response({}, self.revoke_status)
         if self.post_error is not None:
             raise self.post_error
-        time.sleep(0.05)   # let a racing refresher reach the lock
+        time.sleep(0.05)  # let a racing refresher reach the lock
         body = self.token_body(data) if callable(self.token_body) else self.token_body
         return _Response(body, self.status)
 
@@ -117,31 +130,50 @@ def openai(monkeypatch):
 
 def _signed_in(expires_at, earliest=None, refresh_token="r1"):
     auth.AUTH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    auth._write({"host_id": "urn:uuid:h", "account": {"client_id": CLIENT, "email": "a@example.com",
-                                                      "subject": SUBJECT},
-                 "tokens": {"access_token": "a1", "refresh_token": refresh_token,
-                            "expires_at": expires_at, "earliest_refresh_at": earliest}})
+    auth._write(
+        {
+            "host_id": "urn:uuid:h",
+            "account": {"client_id": CLIENT, "email": "a@example.com", "subject": SUBJECT},
+            "tokens": {
+                "access_token": "a1",
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "earliest_refresh_at": earliest,
+            },
+        }
+    )
 
 
 def _renewal(data):
-    return {"access_token": "a2", "refresh_token": "r2", "expires_in": 3600,
-            "id_token": _id_token(), "scope": auth.SCOPE}
+    return {
+        "access_token": "a2",
+        "refresh_token": "r2",
+        "expires_in": 3600,
+        "id_token": _id_token(),
+        "scope": auth.SCOPE,
+    }
 
 
 # --- the ID token ----------------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_a_genuine_id_token_is_accepted():
-    assert auth._validated_claims(_id_token(nonce="n"), CLIENT, "n", _jwks()["keys"])["sub"] == SUBJECT
+    assert (
+        auth._validated_claims(_id_token(nonce="n"), CLIENT, "n", _jwks()["keys"])["sub"] == SUBJECT
+    )
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("token, nonce", [
-    (lambda: _id_token(nonce="other"), "n"),
-    (lambda: _id_token(aud="oaiapp_someone_else", nonce="n"), "n"),
-    (lambda: _id_token(iss="https://evil.example", nonce="n"), "n"),
-    (lambda: _id_token(exp=time.time() - 600, nonce="n"), "n"),
-])
+@pytest.mark.parametrize(
+    "token, nonce",
+    [
+        (lambda: _id_token(nonce="other"), "n"),
+        (lambda: _id_token(aud="oaiapp_someone_else", nonce="n"), "n"),
+        (lambda: _id_token(iss="https://evil.example", nonce="n"), "n"),
+        (lambda: _id_token(exp=time.time() - 600, nonce="n"), "n"),
+    ],
+)
 def test_an_id_token_for_another_sign_in_is_refused(token, nonce):
     with pytest.raises(auth.ChatGPTAuthError):
         auth._validated_claims(token(), CLIENT, nonce, _jwks()["keys"])
@@ -155,6 +187,7 @@ def test_an_id_token_signed_by_another_key_is_refused():
 
 
 # --- tokens ----------------------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_nobody_signed_in_is_told_how_to_sign_in(home, openai):
@@ -177,7 +210,7 @@ def test_a_token_near_expiry_is_renewed_with_the_stored_refresh_token(home, open
     _signed_in(expires_at=time.time() + 60)
     openai.token_body = _renewal
     assert auth.access_token() == "a2"
-    (url, sent), = openai.posts
+    ((url, sent),) = openai.posts
     assert url == auth.TOKEN_URL and sent["refresh_token"] == "r1" and sent["client_id"] == CLIENT
     stored = json.loads(auth.AUTH_FILE.read_text())
     assert stored["tokens"]["refresh_token"] == "r2" and stored["account"]["subject"] == SUBJECT
@@ -197,7 +230,9 @@ def test_concurrent_runs_renew_once_and_never_replay_a_used_refresh_token(home, 
     _signed_in(expires_at=time.time() + 60)
     openai.token_body = _renewal
     tokens = []
-    threads = [threading.Thread(target=lambda: tokens.append(auth.access_token())) for _ in range(4)]
+    threads = [
+        threading.Thread(target=lambda: tokens.append(auth.access_token())) for _ in range(4)
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -224,6 +259,7 @@ def test_a_renewal_for_another_account_is_refused(home, openai):
 
 
 # --- signing in and out ------------------------------------------------------------
+
 
 def _nonce_of(printed):
     url = next(line for line in printed if line.startswith(auth.AUTHORIZE_URL))
@@ -252,8 +288,13 @@ def test_signing_in_by_pasting_the_redirect_saves_a_private_sign_in(home, openai
     def token(data):
         assert data["grant_type"] == "authorization_code" and data["client_id"] == CLIENT
         assert data["code"] == "c1" and data["code_verifier"]
-        return {"access_token": "a1", "refresh_token": "r1", "expires_in": 3600,
-                "id_token": _id_token(nonce=_nonce_of(printed)), "scope": auth.SCOPE}
+        return {
+            "access_token": "a1",
+            "refresh_token": "r1",
+            "expires_in": 3600,
+            "id_token": _id_token(nonce=_nonce_of(printed)),
+            "scope": auth.SCOPE,
+        }
 
     openai.token_body = token
     email = auth.sign_in(say=printed.append, read_line=_paster(printed), timeout=10, port=0)
@@ -263,16 +304,24 @@ def test_signing_in_by_pasting_the_redirect_saves_a_private_sign_in(home, openai
     assert stored["host_id"].startswith("urn:uuid:")
     assert _private(auth.AUTH_FILE)
     asked = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(printed[1]).query))
-    assert asked["client_id"] == auth.DYNAMIC_CLIENT_ID and asked["agent_name_hint"] == "TradingAgents"
-    assert asked["code_challenge_method"] == "S256" and asked["redirect_uri"].startswith("http://127.0.0.1:")
+    assert (
+        asked["client_id"] == auth.DYNAMIC_CLIENT_ID and asked["agent_name_hint"] == "TradingAgents"
+    )
+    assert asked["code_challenge_method"] == "S256" and asked["redirect_uri"].startswith(
+        "http://127.0.0.1:"
+    )
 
 
 @pytest.mark.unit
 def test_an_answer_for_another_sign_in_attempt_is_ignored(home, openai):
     printed = []
     with pytest.raises(auth.ChatGPTAuthError, match="timed out"):
-        auth.sign_in(say=printed.append, read_line=_paster(printed, lambda q: {**q, "state": "forged"}),
-                     timeout=1, port=0)
+        auth.sign_in(
+            say=printed.append,
+            read_line=_paster(printed, lambda q: {**q, "state": "forged"}),
+            timeout=1,
+            port=0,
+        )
     assert any("not the address" in line for line in printed)
     assert openai.posts == [] and not auth.AUTH_FILE.exists()
 
@@ -287,20 +336,37 @@ def _status(url):
 @pytest.mark.unit
 def test_the_browser_answer_reaches_the_loopback_and_strays_are_ignored(home, openai, monkeypatch):
     refused_connect, refused_lookup = socket.socket.connect, socket.getaddrinfo
-    monkeypatch.setattr(socket.socket, "connect", lambda sock, address: (
-        _CONNECT if address[0] == "127.0.0.1" else refused_connect)(sock, address))
-    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: (
-        _GETADDRINFO if host == "127.0.0.1" else refused_lookup)(host, *a, **k))
+    monkeypatch.setattr(
+        socket.socket,
+        "connect",
+        lambda sock, address: (_CONNECT if address[0] == "127.0.0.1" else refused_connect)(
+            sock, address
+        ),
+    )
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, *a, **k: (_GETADDRINFO if host == "127.0.0.1" else refused_lookup)(
+            host, *a, **k
+        ),
+    )
     printed = []
-    openai.token_body = lambda data: {"access_token": "a1", "refresh_token": "r1", "expires_in": 3600,
-                                      "id_token": _id_token(nonce=_nonce_of(printed)), "scope": auth.SCOPE}
+    openai.token_body = lambda data: {
+        "access_token": "a1",
+        "refresh_token": "r1",
+        "expires_in": 3600,
+        "id_token": _id_token(nonce=_nonce_of(printed)),
+        "scope": auth.SCOPE,
+    }
 
     def browser():
         while not any(line.startswith(auth.AUTHORIZE_URL) for line in printed):
             time.sleep(0.01)
         asked = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(printed[1]).query))
         results.append(_status(f"{asked['redirect_uri']}?error=access_denied"))
-        results.append(_status(f"{asked['redirect_uri']}?code=c1&state={asked['state']}&client_id={CLIENT}"))
+        results.append(
+            _status(f"{asked['redirect_uri']}?code=c1&state={asked['state']}&client_id={CLIENT}")
+        )
 
     results = []
     threading.Thread(target=browser, daemon=True).start()
@@ -311,9 +377,13 @@ def test_the_browser_answer_reaches_the_loopback_and_strays_are_ignored(home, op
 @pytest.mark.unit
 def test_a_sign_in_without_plan_usage_is_refused(home, openai):
     printed = []
-    openai.token_body = lambda data: {"access_token": "a1", "refresh_token": "r1", "expires_in": 3600,
-                                      "id_token": _id_token(nonce=_nonce_of(printed)),
-                                      "scope": "openid email offline_access"}
+    openai.token_body = lambda data: {
+        "access_token": "a1",
+        "refresh_token": "r1",
+        "expires_in": 3600,
+        "id_token": _id_token(nonce=_nonce_of(printed)),
+        "scope": "openid email offline_access",
+    }
     with pytest.raises(auth.ChatGPTAuthError, match="approve plan usage"):
         auth.sign_in(say=printed.append, read_line=_paster(printed), timeout=10, port=0)
     assert not auth.AUTH_FILE.exists()
@@ -323,7 +393,7 @@ def test_a_sign_in_without_plan_usage_is_refused(home, openai):
 def test_signing_out_revokes_the_sign_in_and_keeps_only_the_host_id(home, openai):
     _signed_in(expires_at=time.time() + 3000)
     assert auth.sign_out() == "revoked"
-    (url, sent), = openai.posts
+    ((url, sent),) = openai.posts
     assert url == auth.REVOKE_URL and sent["token"] == "r1" and sent["client_id"] == CLIENT
     assert json.loads(auth.AUTH_FILE.read_text()) == {"host_id": "urn:uuid:h"}
     assert auth.signed_in_as() is None
@@ -374,8 +444,13 @@ def test_a_temporary_failure_after_expiry_says_to_try_again_not_to_sign_in(home,
 def test_signing_in_again_revokes_the_replaced_sign_in(home, openai):
     _signed_in(expires_at=time.time() + 3000, refresh_token="old")
     printed = []
-    openai.token_body = lambda data: {"access_token": "a2", "refresh_token": "r2", "expires_in": 3600,
-                                      "id_token": _id_token(nonce=_nonce_of(printed)), "scope": auth.SCOPE}
+    openai.token_body = lambda data: {
+        "access_token": "a2",
+        "refresh_token": "r2",
+        "expires_in": 3600,
+        "id_token": _id_token(nonce=_nonce_of(printed)),
+        "scope": auth.SCOPE,
+    }
     auth.sign_in(say=printed.append, read_line=_paster(printed), timeout=10, port=0)
     assert openai.posts[-1][0] == auth.REVOKE_URL and openai.posts[-1][1]["token"] == "old"
     assert json.loads(auth.AUTH_FILE.read_text())["tokens"]["refresh_token"] == "r2"
@@ -385,9 +460,13 @@ def test_signing_in_again_revokes_the_replaced_sign_in(home, openai):
 def test_another_account_cannot_replace_the_signed_in_one(home, openai):
     _signed_in(expires_at=time.time() + 3000)
     printed = []
-    openai.token_body = lambda data: {"access_token": "a2", "refresh_token": "r2", "expires_in": 3600,
-                                      "id_token": _id_token(nonce=_nonce_of(printed), sub="someone-else"),
-                                      "scope": auth.SCOPE}
+    openai.token_body = lambda data: {
+        "access_token": "a2",
+        "refresh_token": "r2",
+        "expires_in": 3600,
+        "id_token": _id_token(nonce=_nonce_of(printed), sub="someone-else"),
+        "scope": auth.SCOPE,
+    }
     with pytest.raises(auth.ChatGPTAuthError, match="logout chatgpt"):
         auth.sign_in(say=printed.append, read_line=_paster(printed), timeout=10, port=0)
     assert json.loads(auth.AUTH_FILE.read_text())["tokens"]["refresh_token"] == "r1"

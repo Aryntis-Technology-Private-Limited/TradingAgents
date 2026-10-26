@@ -15,8 +15,10 @@ def _accepts_minimal_thinking(model: str) -> bool:
     generations) are treated as rejecting it."""
     model_lc = model.lower()
     match = _GEMINI_VERSION.match(model_lc)
-    return bool(match) and "pro" not in model_lc and (
-        (int(match.group(1)), int(match.group(2))) < (3, 8)
+    return (
+        bool(match)
+        and "pro" not in model_lc
+        and ((int(match.group(1)), int(match.group(2))) < (3, 8))
     )
 
 
@@ -49,8 +51,15 @@ class GoogleClient(BaseLLMClient):
         if self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
-        for key in ("timeout", "max_retries", "temperature", "max_output_tokens",
-                    "callbacks", "http_client", "http_async_client"):
+        for key in (
+            "timeout",
+            "max_retries",
+            "temperature",
+            "max_output_tokens",
+            "callbacks",
+            "http_client",
+            "http_async_client",
+        ):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
         # Without a timeout a stalled Gemini call waits forever; the OpenAI and

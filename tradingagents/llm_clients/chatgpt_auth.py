@@ -38,15 +38,15 @@ SCOPE = "openid profile email offline_access resource.invoke chatgpt.tokens.use.
 PLAN_SCOPE = "chatgpt.tokens.use.direct"
 CALLBACK_PATH = "/auth/callback"
 DEFAULT_PORT = 1455
-REFRESH_MARGIN = 300          # refresh when the access token has under 5 minutes left
-RETRY_AFTER = 60              # after OpenAI could not renew, wait this long before trying again
+REFRESH_MARGIN = 300  # refresh when the access token has under 5 minutes left
+RETRY_AFTER = 60  # after OpenAI could not renew, wait this long before trying again
 TIMEOUT = 30
 
 AUTH_FILE = Path(_TRADINGAGENTS_HOME) / "chatgpt-auth.json"
 LOGIN_HINT = "Not signed in to ChatGPT; run `tradingagents login chatgpt`."
 
 
-_retry_after = 0.0            # no renewal attempt in this process before this time
+_retry_after = 0.0  # no renewal attempt in this process before this time
 
 
 class ChatGPTAuthError(RuntimeError):
@@ -58,6 +58,7 @@ class ChatGPTUnreachable(ChatGPTAuthError):
 
 
 # --- the auth file -------------------------------------------------------------------
+
 
 def _read() -> dict:
     try:
@@ -94,6 +95,7 @@ def signed_in_as() -> str | None:
 
 # --- tokens --------------------------------------------------------------------------
 
+
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
@@ -108,8 +110,9 @@ def _signing_keys() -> list[dict]:
     try:
         keys = requests.get(JWKS_URL, timeout=TIMEOUT).json()["keys"]
     except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
-        raise ChatGPTUnreachable(f"Could not reach OpenAI to check the sign-in ({type(exc).__name__}); "
-                                 "try again.") from None
+        raise ChatGPTUnreachable(
+            f"Could not reach OpenAI to check the sign-in ({type(exc).__name__}); try again."
+        ) from None
     return keys if isinstance(keys, list) else []
 
 
@@ -123,22 +126,38 @@ def _validated_claims(id_token: str, client_id: str, nonce: str | None, keys: li
     try:
         header_b64, payload_b64, signature_b64 = id_token.split(".")
         header = json.loads(_b64url_decode(header_b64))
-        key = next((k for k in keys if k.get("kid") == header.get("kid") and k.get("kty") == "RSA"), None)
+        key = next(
+            (k for k in keys if k.get("kid") == header.get("kid") and k.get("kty") == "RSA"), None
+        )
         if header.get("alg") != "RS256" or key is None:
             raise InvalidSignature
-        public = rsa.RSAPublicNumbers(int.from_bytes(_b64url_decode(key["e"]), "big"),
-                                      int.from_bytes(_b64url_decode(key["n"]), "big")).public_key()
-        public.verify(_b64url_decode(signature_b64), f"{header_b64}.{payload_b64}".encode(),
-                      padding.PKCS1v15(), hashes.SHA256())
+        public = rsa.RSAPublicNumbers(
+            int.from_bytes(_b64url_decode(key["e"]), "big"),
+            int.from_bytes(_b64url_decode(key["n"]), "big"),
+        ).public_key()
+        public.verify(
+            _b64url_decode(signature_b64),
+            f"{header_b64}.{payload_b64}".encode(),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
         claims = json.loads(_b64url_decode(payload_b64))
     except (InvalidSignature, ValueError, KeyError, TypeError, AttributeError):
-        raise ChatGPTAuthError("ChatGPT sign-in returned an ID token OpenAI's keys do not verify.") from None
+        raise ChatGPTAuthError(
+            "ChatGPT sign-in returned an ID token OpenAI's keys do not verify."
+        ) from None
     audience = claims.get("aud")
     audiences = audience if isinstance(audience, list) else [audience]
-    if (claims.get("iss") != ISSUER or client_id not in audiences or not claims.get("sub")
-            or claims.get("exp", 0) + 5 < time.time()
-            or (nonce is not None and claims.get("nonce") != nonce)):
-        raise ChatGPTAuthError("ChatGPT sign-in returned an ID token that does not match this sign-in.")
+    if (
+        claims.get("iss") != ISSUER
+        or client_id not in audiences
+        or not claims.get("sub")
+        or claims.get("exp", 0) + 5 < time.time()
+        or (nonce is not None and claims.get("nonce") != nonce)
+    ):
+        raise ChatGPTAuthError(
+            "ChatGPT sign-in returned an ID token that does not match this sign-in."
+        )
     return claims
 
 
@@ -170,9 +189,13 @@ def _token_request(form: dict, task: str, refused: str) -> dict:
     try:
         response = requests.post(TOKEN_URL, timeout=TIMEOUT, data=form)
     except requests.RequestException as exc:
-        raise ChatGPTUnreachable(f"Could not reach OpenAI to {task} ({type(exc).__name__}); try again.") from None
+        raise ChatGPTUnreachable(
+            f"Could not reach OpenAI to {task} ({type(exc).__name__}); try again."
+        ) from None
     if response.status_code in (408, 429) or response.status_code >= 500:
-        raise ChatGPTUnreachable(f"OpenAI could not {task} now ({_oauth_error(response)}); try again.")
+        raise ChatGPTUnreachable(
+            f"OpenAI could not {task} now ({_oauth_error(response)}); try again."
+        )
     if response.status_code != 200:
         raise ChatGPTAuthError(f"OpenAI did not {task} ({_oauth_error(response)}); {refused}.")
     try:
@@ -180,16 +203,25 @@ def _token_request(form: dict, task: str, refused: str) -> dict:
     except ValueError:
         body = None
     if not isinstance(body, dict) or not isinstance(body.get("access_token"), str):
-        raise ChatGPTUnreachable(f"OpenAI's answer could not be read when asked to {task}; try again.")
+        raise ChatGPTUnreachable(
+            f"OpenAI's answer could not be read when asked to {task}; try again."
+        )
     return body
 
 
 def _refresh(data: dict, now: float) -> dict:
     tokens, account = data["tokens"], data["account"]
     keys = _signing_keys()
-    body = _token_request({"grant_type": "refresh_token", "client_id": account["client_id"],
-                           "refresh_token": tokens["refresh_token"], "resource": API_BASE},
-                          "renew your ChatGPT sign-in", "run `tradingagents login chatgpt` again")
+    body = _token_request(
+        {
+            "grant_type": "refresh_token",
+            "client_id": account["client_id"],
+            "refresh_token": tokens["refresh_token"],
+            "resource": API_BASE,
+        },
+        "renew your ChatGPT sign-in",
+        "run `tradingagents login chatgpt` again",
+    )
     if body.get("id_token"):
         claims = _validated_claims(body["id_token"], account["client_id"], None, keys)
         if claims["sub"] != account.get("subject"):
@@ -230,8 +262,10 @@ def access_token(now: Callable[[], float] = time.time) -> str:
             if now() < _retry_after:
                 if still_works:
                     return tokens["access_token"]
-                raise ChatGPTUnreachable("OpenAI could not renew your ChatGPT sign-in a moment ago; "
-                                         "try again in a minute.")
+                raise ChatGPTUnreachable(
+                    "OpenAI could not renew your ChatGPT sign-in a moment ago; "
+                    "try again in a minute."
+                )
             try:
                 data = _refresh(data, now())
             except ChatGPTUnreachable:
@@ -253,17 +287,24 @@ def credential() -> Callable[[], str]:
 
 def list_models() -> list[tuple[str, str]]:
     """(name, model ID) for each model the signed-in plan offers, in OpenAI's order."""
-    response = requests.get(f"{API_BASE}/models", timeout=10,
-                            headers={"Authorization": f"Bearer {access_token()}"})
+    response = requests.get(
+        f"{API_BASE}/models", timeout=10, headers={"Authorization": f"Bearer {access_token()}"}
+    )
     response.raise_for_status()
-    models = [m for m in response.json().get("models", [])
-              if isinstance(m, dict) and isinstance(m.get("slug"), str)
-              and m.get("visibility") == "list" and m.get("supported_in_api", True)]
+    models = [
+        m
+        for m in response.json().get("models", [])
+        if isinstance(m, dict)
+        and isinstance(m.get("slug"), str)
+        and m.get("visibility") == "list"
+        and m.get("supported_in_api", True)
+    ]
     models.sort(key=lambda m: m.get("priority") or 0)
     return [(m.get("display_name") or m["slug"], m["slug"]) for m in models]
 
 
 # --- signing in and out --------------------------------------------------------------
+
 
 class _Callback:
     """The first answer carrying this attempt's ``state``; stray or stale requests are ignored."""
@@ -288,7 +329,7 @@ class _Callback:
 
 def _listen(callback: _Callback, port: int) -> http.server.HTTPServer:
     class Handler(http.server.BaseHTTPRequestHandler):
-        timeout = 5   # a connection that sends nothing cannot hold up the real answer
+        timeout = 5  # a connection that sends nothing cannot hold up the real answer
 
         def do_GET(self):  # noqa: N802 (http.server's name)
             ok = callback.accept(self.path)
@@ -306,23 +347,34 @@ def _listen(callback: _Callback, port: int) -> http.server.HTTPServer:
     except OSError:
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     # A short poll interval lets the server stop promptly once the answer has arrived.
-    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
+    ).start()
     return server
 
 
 def _revoke(tokens: dict, client_id: str | None) -> bool:
     try:
-        response = requests.post(REVOKE_URL, timeout=TIMEOUT, data={
-            "token": tokens.get("refresh_token"), "token_type_hint": "refresh_token",
-            "client_id": client_id,
-        })
+        response = requests.post(
+            REVOKE_URL,
+            timeout=TIMEOUT,
+            data={
+                "token": tokens.get("refresh_token"),
+                "token_type_hint": "refresh_token",
+                "client_id": client_id,
+            },
+        )
     except requests.RequestException:
         return False
     return response.status_code == 200
 
 
-def sign_in(say: Callable[[str], None] = print, read_line: Callable[[], str] = input,
-            timeout: float = 600, port: int = DEFAULT_PORT) -> str:
+def sign_in(
+    say: Callable[[str], None] = print,
+    read_line: Callable[[], str] = input,
+    timeout: float = 600,
+    port: int = DEFAULT_PORT,
+) -> str:
     """Sign in with ChatGPT and save the result; returns the account's email.
 
     The address to open is printed. The browser comes back to 127.0.0.1; when this
@@ -333,16 +385,25 @@ def sign_in(say: Callable[[str], None] = print, read_line: Callable[[], str] = i
     host_id = _host_id(data)
     account = data.get("account") or {}
     client_id = account.get("client_id") or DYNAMIC_CLIENT_ID
-    state, nonce, verifier = (_b64url(secrets.token_bytes(32)), _b64url(secrets.token_bytes(32)),
-                              _b64url(secrets.token_bytes(64)))
+    state, nonce, verifier = (
+        _b64url(secrets.token_bytes(32)),
+        _b64url(secrets.token_bytes(32)),
+        _b64url(secrets.token_bytes(64)),
+    )
     callback = _Callback(state)
     server = _listen(callback, port)
     try:
         redirect_uri = f"http://127.0.0.1:{server.server_address[1]}{CALLBACK_PATH}"
         params = {
-            "client_id": client_id, "ext_agent_host_id": host_id, "response_type": "code",
-            "redirect_uri": redirect_uri, "scope": SCOPE, "resource": API_BASE, "state": state,
-            "nonce": nonce, "code_challenge_method": "S256",
+            "client_id": client_id,
+            "ext_agent_host_id": host_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": SCOPE,
+            "resource": API_BASE,
+            "state": state,
+            "nonce": nonce,
+            "code_challenge_method": "S256",
             "code_challenge": _b64url(hashlib.sha256(verifier.encode()).digest()),
         }
         if client_id == DYNAMIC_CLIENT_ID:
@@ -357,13 +418,17 @@ def sign_in(say: Callable[[str], None] = print, read_line: Callable[[], str] = i
             try:
                 while not callback.received.is_set():
                     if not callback.accept(read_line()) and not callback.received.is_set():
-                        say("That is not the address this sign-in ends on; paste the whole address.")
+                        say(
+                            "That is not the address this sign-in ends on; paste the whole address."
+                        )
             except (EOFError, OSError):
                 return
 
         threading.Thread(target=read_pasted, daemon=True).start()
         if not callback.received.wait(timeout):
-            raise ChatGPTAuthError("Signing in with ChatGPT timed out; run `tradingagents login chatgpt` again.")
+            raise ChatGPTAuthError(
+                "Signing in with ChatGPT timed out; run `tradingagents login chatgpt` again."
+            )
     finally:
         server.shutdown()
         server.server_close()
@@ -373,28 +438,48 @@ def sign_in(say: Callable[[str], None] = print, read_line: Callable[[], str] = i
         raise ChatGPTAuthError(f"ChatGPT sign-in was not completed ({answer['error']}).")
     issued = answer.get("client_id") or client_id
     if issued == DYNAMIC_CLIENT_ID or (account.get("client_id") and issued != account["client_id"]):
-        raise ChatGPTAuthError("ChatGPT sign-in did not register TradingAgents; run "
-                               "`tradingagents logout chatgpt`, then sign in again.")
+        raise ChatGPTAuthError(
+            "ChatGPT sign-in did not register TradingAgents; run "
+            "`tradingagents logout chatgpt`, then sign in again."
+        )
     keys = _signing_keys()
-    body = _token_request({"grant_type": "authorization_code", "client_id": issued,
-                           "code": answer.get("code", ""), "code_verifier": verifier,
-                           "redirect_uri": redirect_uri, "resource": API_BASE},
-                          "sign you in to ChatGPT", "sign in again")
+    body = _token_request(
+        {
+            "grant_type": "authorization_code",
+            "client_id": issued,
+            "code": answer.get("code", ""),
+            "code_verifier": verifier,
+            "redirect_uri": redirect_uri,
+            "resource": API_BASE,
+        },
+        "sign you in to ChatGPT",
+        "sign in again",
+    )
     claims = _validated_claims(body.get("id_token") or "", issued, nonce, keys)
     if account.get("subject") and claims["sub"] != account["subject"]:
-        raise ChatGPTAuthError(f"This machine is signed in as {account.get('email') or 'another account'}; "
-                               "run `tradingagents logout chatgpt` first.")
+        raise ChatGPTAuthError(
+            f"This machine is signed in as {account.get('email') or 'another account'}; "
+            "run `tradingagents logout chatgpt` first."
+        )
     if PLAN_SCOPE not in (body.get("scope") or "").split():
-        raise ChatGPTAuthError("ChatGPT did not allow TradingAgents to use your plan; "
-                               "sign in again and approve plan usage.")
+        raise ChatGPTAuthError(
+            "ChatGPT did not allow TradingAgents to use your plan; "
+            "sign in again and approve plan usage."
+        )
     AUTH_FILE.parent.mkdir(parents=True, exist_ok=True)
     with locked(AUTH_FILE):
         replaced = _read().get("tokens")
-        _write({
-            "host_id": host_id,
-            "account": {"client_id": issued, "email": claims.get("email"), "subject": claims["sub"]},
-            "tokens": _token_record(body, time.time()),
-        })
+        _write(
+            {
+                "host_id": host_id,
+                "account": {
+                    "client_id": issued,
+                    "email": claims.get("email"),
+                    "subject": claims["sub"],
+                },
+                "tokens": _token_record(body, time.time()),
+            }
+        )
     if replaced:
         _revoke(replaced, issued)
     return claims.get("email") or "your ChatGPT account"

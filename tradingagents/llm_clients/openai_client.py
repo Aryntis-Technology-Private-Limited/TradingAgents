@@ -120,9 +120,7 @@ class DeepSeekChatOpenAI(NormalizedChatOpenAI):
         response_dict = (
             response
             if isinstance(response, dict)
-            else response.model_dump(
-                exclude={"choices": {"__all__": {"message": {"parsed"}}}}
-            )
+            else response.model_dump(exclude={"choices": {"__all__": {"message": {"parsed"}}}})
         )
         for generation, choice in zip(
             chat_result.generations, response_dict.get("choices", []), strict=False
@@ -210,8 +208,15 @@ def _chatgpt_credential() -> Callable[[], str]:
 
 # Kwargs forwarded from user config to ChatOpenAI
 _PASSTHROUGH_KWARGS = (
-    "timeout", "max_retries", "reasoning_effort", "temperature", "max_tokens",
-    "api_key", "callbacks", "http_client", "http_async_client",
+    "timeout",
+    "max_retries",
+    "reasoning_effort",
+    "temperature",
+    "max_tokens",
+    "api_key",
+    "callbacks",
+    "http_client",
+    "http_async_client",
 )
 
 # OpenAI's ``reasoning_effort`` is only accepted by reasoning models — GPT-5 and
@@ -243,45 +248,55 @@ class ProviderSpec:
     ``chat_class``) lives here.
     """
 
-    chat_class: type = NormalizedChatOpenAI   # provider quirks live in the subclass
-    base_url: str | None = None            # default endpoint (None -> SDK default)
-    base_url_env: str | None = None        # env var that overrides base_url (e.g. OLLAMA_BASE_URL)
-    key_optional: bool = False                # don't require/prompt; send a placeholder if unset
-    placeholder_key: str = "EMPTY"            # sent when no key is available (keyless local servers)
-    require_base_url: bool = False            # error if no base_url is resolved (generic endpoint)
-    use_responses_api: bool = False           # native OpenAI Responses API
+    chat_class: type = NormalizedChatOpenAI  # provider quirks live in the subclass
+    base_url: str | None = None  # default endpoint (None -> SDK default)
+    base_url_env: str | None = None  # env var that overrides base_url (e.g. OLLAMA_BASE_URL)
+    key_optional: bool = False  # don't require/prompt; send a placeholder if unset
+    placeholder_key: str = "EMPTY"  # sent when no key is available (keyless local servers)
+    require_base_url: bool = False  # error if no base_url is resolved (generic endpoint)
+    use_responses_api: bool = False  # native OpenAI Responses API
     # A provider the user signs in to: ``credential()`` returns the api_key callable
     # (a fresh token per request) or raises when nobody is signed in. Its token goes
     # only to its pinned base_url, and never alongside an API key.
     credential: Callable[[], Callable[[], str]] | None = None
-    pinned_base_url: bool = False             # refuse any other endpoint for this provider
+    pinned_base_url: bool = False  # refuse any other endpoint for this provider
 
 
 # Single source of truth for the OpenAI-compatible provider family. Dual-region
 # providers (qwen/glm/minimax) keep separate endpoints because international and
 # China accounts cannot share credentials (#758).
 OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
-    "openai":     ProviderSpec(use_responses_api=True),
-    "xai":        ProviderSpec(base_url="https://api.x.ai/v1"),
-    "deepseek":   ProviderSpec(base_url="https://api.deepseek.com", chat_class=DeepSeekChatOpenAI),
-    "qwen":       ProviderSpec(base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-    "qwen-cn":    ProviderSpec(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
-    "glm":        ProviderSpec(base_url="https://api.z.ai/api/paas/v4/"),
-    "glm-cn":     ProviderSpec(base_url="https://open.bigmodel.cn/api/paas/v4/"),
-    "minimax":    ProviderSpec(base_url="https://api.minimax.io/v1", chat_class=MinimaxChatOpenAI),
-    "minimax-cn": ProviderSpec(base_url="https://api.minimaxi.com/v1", chat_class=MinimaxChatOpenAI),
+    "openai": ProviderSpec(use_responses_api=True),
+    "xai": ProviderSpec(base_url="https://api.x.ai/v1"),
+    "deepseek": ProviderSpec(base_url="https://api.deepseek.com", chat_class=DeepSeekChatOpenAI),
+    "qwen": ProviderSpec(base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
+    "qwen-cn": ProviderSpec(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    "glm": ProviderSpec(base_url="https://api.z.ai/api/paas/v4/"),
+    "glm-cn": ProviderSpec(base_url="https://open.bigmodel.cn/api/paas/v4/"),
+    "minimax": ProviderSpec(base_url="https://api.minimax.io/v1", chat_class=MinimaxChatOpenAI),
+    "minimax-cn": ProviderSpec(
+        base_url="https://api.minimaxi.com/v1", chat_class=MinimaxChatOpenAI
+    ),
     "openrouter": ProviderSpec(base_url="https://openrouter.ai/api/v1"),
-    "mistral":    ProviderSpec(base_url="https://api.mistral.ai/v1"),
-    "kimi":       ProviderSpec(base_url="https://api.moonshot.ai/v1"),
-    "groq":       ProviderSpec(base_url="https://api.groq.com/openai/v1"),
-    "nvidia":     ProviderSpec(base_url="https://integrate.api.nvidia.com/v1"),
-    "ollama":     ProviderSpec(base_url="http://localhost:11434/v1", base_url_env="OLLAMA_BASE_URL",
-                               key_optional=True, placeholder_key="ollama",
-                               chat_class=LocalCompatibleChatOpenAI),
+    "mistral": ProviderSpec(base_url="https://api.mistral.ai/v1"),
+    "kimi": ProviderSpec(base_url="https://api.moonshot.ai/v1"),
+    "groq": ProviderSpec(base_url="https://api.groq.com/openai/v1"),
+    "nvidia": ProviderSpec(base_url="https://integrate.api.nvidia.com/v1"),
+    "ollama": ProviderSpec(
+        base_url="http://localhost:11434/v1",
+        base_url_env="OLLAMA_BASE_URL",
+        key_optional=True,
+        placeholder_key="ollama",
+        chat_class=LocalCompatibleChatOpenAI,
+    ),
     # The person's ChatGPT plan, through their own sign-in.
-    "chatgpt":    ProviderSpec(base_url="https://api.openai.com/v1", chat_class=ChatGPTPlanChatOpenAI,
-                               use_responses_api=True, credential=_chatgpt_credential,
-                               pinned_base_url=True),
+    "chatgpt": ProviderSpec(
+        base_url="https://api.openai.com/v1",
+        chat_class=ChatGPTPlanChatOpenAI,
+        use_responses_api=True,
+        credential=_chatgpt_credential,
+        pinned_base_url=True,
+    ),
     # Generic endpoint: user supplies base_url; key optional (keyless local).
     "openai_compatible": ProviderSpec(
         require_base_url=True, key_optional=True, chat_class=LocalCompatibleChatOpenAI
@@ -290,15 +305,19 @@ OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
 
 
 # Providers the user signs in to instead of setting an API key.
-SIGNED_IN_PROVIDERS = tuple(key for key, spec in OPENAI_COMPATIBLE_PROVIDERS.items() if spec.credential)
+SIGNED_IN_PROVIDERS = tuple(
+    key for key, spec in OPENAI_COMPATIBLE_PROVIDERS.items() if spec.credential
+)
 
 
 def check_endpoint(provider: str, base_url: str | None) -> None:
     """Raise ValueError when a provider pinned to its own endpoint is pointed elsewhere."""
     spec = OPENAI_COMPATIBLE_PROVIDERS.get(provider.lower())
     if spec is not None and spec.pinned_base_url and base_url and base_url != spec.base_url:
-        raise ValueError(f"Provider '{provider}' only connects to {spec.base_url}; "
-                         "unset backend_url / TRADINGAGENTS_LLM_BACKEND_URL for it.")
+        raise ValueError(
+            f"Provider '{provider}' only connects to {spec.base_url}; "
+            "unset backend_url / TRADINGAGENTS_LLM_BACKEND_URL for it."
+        )
 
 
 def is_openai_compatible(provider: str) -> bool:
@@ -374,7 +393,9 @@ class OpenAIClient(BaseLLMClient):
             api_key = os.environ.get(api_key_env) if api_key_env else None
             if spec.credential is not None:
                 if "api_key" in self.kwargs:
-                    raise ValueError(f"Provider '{self.provider}' uses its sign-in, not an api_key.")
+                    raise ValueError(
+                        f"Provider '{self.provider}' uses its sign-in, not an api_key."
+                    )
                 llm_kwargs["api_key"] = spec.credential()
             elif api_key:
                 llm_kwargs["api_key"] = api_key

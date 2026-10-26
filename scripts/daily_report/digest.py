@@ -42,10 +42,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.daily_report import config as daily_config
 from tradingagents import default_config as config_module
 from tradingagents.dataflows.date_window import get_current_date
-
-from scripts.daily_report import config as daily_config
 
 # ---------------------------------------------------------------------------
 # Decision extraction
@@ -54,8 +53,14 @@ from scripts.daily_report import config as daily_config
 # The rendered structured sections inside complete_report.md. Each is a
 # `**Label**: value` line; a structured render always carries the label.
 _DECISION_LABELS = (
-    "Rating", "Action", "Entry Price", "Stop Loss", "Position Sizing",
-    "Price Target", "Time Horizon", "Executive Summary",
+    "Rating",
+    "Action",
+    "Entry Price",
+    "Stop Loss",
+    "Position Sizing",
+    "Price Target",
+    "Time Horizon",
+    "Executive Summary",
 )
 
 _RATING_RE = re.compile(r"\b(Buy|Overweight|Hold|Underweight|Sell)\b")
@@ -70,6 +75,7 @@ _DIRECTIONAL = {"buy", "overweight", "underweight", "sell"}
 class Decision:
     """The actionable core of one ticker's report — everything the digest
     card needs and nothing the reader has to dig for."""
+
     ticker: str
     rating: str = ""
     action: str = ""
@@ -301,8 +307,10 @@ def render_pdf(decisions: list[Decision], date_str: str, scanned: int) -> Path:
         HTML(string=doc).write_pdf(str(out))
         print(f"[digest] PDF written: {out}", flush=True)
     except Exception as exc:
-        print(f"[digest] WeasyPrint unavailable ({exc}); HTML written instead: {html_path}",
-              flush=True)
+        print(
+            f"[digest] WeasyPrint unavailable ({exc}); HTML written instead: {html_path}",
+            flush=True,
+        )
     return out
 
 
@@ -310,16 +318,20 @@ def render_pdf(decisions: list[Decision], date_str: str, scanned: int) -> Path:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def run() -> int:
     config = config_module.build_default_config()
-    results_dir = Path(config["results_dir"])
+    Path(config["results_dir"])
     reports_root = daily_config.reports_dir()
     today = get_current_date()
     today_dir = reports_root / today
 
     if not today_dir.is_dir():
-        print(f"[digest] no reports folder for {today} at {today_dir}; "
-              f"the report sweep may not have run yet", flush=True)
+        print(
+            f"[digest] no reports folder for {today} at {today_dir}; "
+            f"the report sweep may not have run yet",
+            flush=True,
+        )
         return 1
 
     decisions = collect_decisions(today_dir)
@@ -327,8 +339,7 @@ def run() -> int:
     interesting = [d for d in decisions if d.is_interesting()]
     interesting.sort(key=lambda d: d.ticker)
 
-    print(f"[digest] {today}: {len(interesting)} of {scanned} tickers of interest",
-          flush=True)
+    print(f"[digest] {today}: {len(interesting)} of {scanned} tickers of interest", flush=True)
     out = render_pdf(interesting, today, scanned)
     print(f"[digest] output: {out}", flush=True)
     return 0

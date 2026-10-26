@@ -60,5 +60,3 @@ def build_analyst_execution_plan(
         raise ValueError("at least one analyst must be selected")
 
     return AnalystExecutionPlan(specs=specs)
-
-

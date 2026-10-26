@@ -16,6 +16,7 @@ never adds more than 5.5 seconds of latency.
 Output shape matches what the other news vendors produce: a header line plus
 a list of articles (title / source / date / link).
 """
+
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -136,10 +137,10 @@ def _request(endpoint: str, params: dict) -> dict:
 
     try:
         return response.json()
-    except ValueError:
+    except ValueError as exc:
         raise VendorUnavailableError(
             f"GDELT returned non-JSON body: {response.text[:120]!r}"
-        )
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +164,34 @@ def _timespan_str(days: int) -> str:
     return f"{max(1, min(days, 14))}d"
 
 
-def _chunk_days(start_date: str, end_date: str, chunk_days: int = 14) -> list[tuple[str, str]]:
-    """Split ``[start_date, end_date]`` into non-overlapping 14-day slabs.
+def _abs_bounds(start_date: str, end_date: str) -> dict[str, str]:
+    """Absolute GDELT search bounds for a date range.
 
-    GDELT's ``timespan`` param is capped at 14 days per call; a longer window
-    must be chunked. The last slab may be shorter.
+    GDELT's DOC 2.0 API bounds a search with ``startdatetime`` and
+    ``enddatetime`` (``YYYYMMDDHHMMSS``, UTC). Unlike the relative
+    ``timespan`` param — which is measured back from *now* and capped at
+    14 days — the absolute bounds address the exact window requested, so
+    a historical analysis searches the days it asked for instead of a
+    rolling window that ends today.
+
+    The DOC API accepts an absolute window of up to one year; a longer
+    request is chunked by the caller.
+    """
+    start = datetime.strptime(start_date, "%Y-%m-%d")
+    end = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    return {
+        "startdatetime": start.strftime("%Y%m%d%H%M%S"),
+        "enddatetime": end.strftime("%Y%m%d%H%M%S"),
+    }
+
+
+def _chunk_days(start_date: str, end_date: str, chunk_days: int = 365) -> list[tuple[str, str]]:
+    """Split ``[start_date, end_date]`` into non-overlapping slabs.
+
+    The DOC API's absolute date bounds span up to a year, so a slab is a
+    year rather than 14 days; the last slab may be shorter. Chunking is
+    what keeps a long backtest window from asking for more coverage than
+    the API will serve in one call.
     """
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
@@ -241,10 +265,11 @@ def get_news(ticker: str, start_date: str, end_date: str) -> str:
             "query": query,
             "mode": "artlist",
             "format": "json",
-            "timespan": _timespan_str(
-                (datetime.strptime(chunk_end, "%Y-%m-%d") - datetime.strptime(chunk_start, "%Y-%m-%d")).days + 1
-            ),
             "maxrecords": max_records,
+            # Absolute bounds, not a relative timespan: a rolling
+            # "14d-from-now" window would miss historical days and
+            # re-serve the same recent items in every chunk.
+            **_abs_bounds(chunk_start, chunk_end),
         }
         if sourcecountry:
             # Soft hint — GDELT does not reliably restrict by sourcecountry,
@@ -259,9 +284,12 @@ def get_news(ticker: str, start_date: str, end_date: str) -> str:
     # returns in artlist JSON; GKG per-document tone/publish date is not
     # accessible via the DOC 2.0 API).
     start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=UTC)
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+        hour=23, minute=59, second=59, tzinfo=UTC
+    )
     in_window = [
-        a for a in all_articles
+        a
+        for a in all_articles
         if (seendate := _parse_seendate(a.get("seendate", ""))) is not None
         and start_dt <= seendate <= end_dt
     ]
@@ -305,26 +333,32 @@ def get_global_news(
     if not search_queries:
         raise NoMarketDataError("", "", "no global_news_queries configured")
 
-    timespan = _timespan_str(look_back_days)
+    # Absolute bounds, not a relative timespan: a rolling "14d-from-now"
+    # window would miss the days requested and silently cap any lookback
+    # longer than 14 days.
+    start_dt = (datetime.strptime(as_of_date, "%Y-%m-%d") - timedelta(days=look_back_days)).replace(
+        tzinfo=UTC
+    )
+    end_dt = datetime.strptime(as_of_date, "%Y-%m-%d").replace(
+        hour=23, minute=59, second=59, tzinfo=UTC
+    )
+    start_date = start_dt.strftime("%Y-%m-%d")
+    chunks = _chunk_days(start_date, as_of_date)
+    if not chunks:
+        raise NoMarketDataError("", "", "empty date window")
 
     all_articles: list[dict] = []
     for query in search_queries:
-        params = {
-            "query": query,
-            "mode": "artlist",
-            "format": "json",
-            "timespan": timespan,
-            "maxrecords": limit,
-        }
-        body = _request("doc/doc", params)
-        all_articles.extend(body.get("articles", []))
-
-    # Deduplicate by URL and filter to the requested window.
-    start_dt = (
-        datetime.strptime(as_of_date, "%Y-%m-%d")
-        - timedelta(days=look_back_days)
-    ).replace(tzinfo=UTC)
-    end_dt = datetime.strptime(as_of_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=UTC)
+        for chunk_start, chunk_end in chunks:
+            params = {
+                "query": query,
+                "mode": "artlist",
+                "format": "json",
+                "maxrecords": limit,
+                **_abs_bounds(chunk_start, chunk_end),
+            }
+            body = _request("doc/doc", params)
+            all_articles.extend(body.get("articles", []))
 
     seen: set[str] = set()
     in_window: list[dict] = []
@@ -341,6 +375,5 @@ def get_global_news(
     if not in_window:
         raise NoMarketDataError("", "", "no GDELT global news in window")
 
-    start_date = start_dt.strftime("%Y-%m-%d")
     header = f"## Global Market News (GDELT), from {start_date} to {as_of_date}:\n"
     return _render_articles(in_window[:limit], header)

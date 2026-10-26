@@ -2,6 +2,7 @@
 
 All HTTP access is mocked, so these run without a network connection or a key.
 """
+
 import copy
 import unittest
 from unittest import mock
@@ -53,16 +54,19 @@ class GdeltEntityMappingTests(unittest.TestCase):
 # get_news
 # ---------------------------------------------------------------------------
 
+
 def _articles(dates: list[str]) -> list[dict]:
     """Build GDELT-shaped article dicts with seendate in YYYYMMDDTHHMMSSZ form."""
     out = []
     for i, day in enumerate(dates):
-        out.append({
-            "seendate": day.replace("-", "") + "T120000Z",
-            "title": f"Article {i}",
-            "domain": f"domain{i}.com",
-            "url": f"https://example.com/{i}",
-        })
+        out.append(
+            {
+                "seendate": day.replace("-", "") + "T120000Z",
+                "title": f"Article {i}",
+                "domain": f"domain{i}.com",
+                "url": f"https://example.com/{i}",
+            }
+        )
     return out
 
 
@@ -86,29 +90,36 @@ class GdeltGetNewsTests(unittest.TestCase):
         self.assertIn("### Article 1", out)
 
     def test_empty_article_list_raises_no_market_data(self):
-        with mock.patch.object(gdelt, "_request", return_value={"articles": []}), \
-             self.assertRaises(NoMarketDataError):
+        with (
+            mock.patch.object(gdelt, "_request", return_value={"articles": []}),
+            self.assertRaises(NoMarketDataError),
+        ):
             gdelt.get_news("RELIANCE.NS", "2026-01-01", "2026-01-10")
 
     def test_429_raises_vendor_unavailable(self):
         resp = mock.Mock(status_code=429)
         resp.json.return_value = {}
-        with mock.patch.object(gdelt.requests, "get", return_value=resp), \
-             self.assertRaises(VendorUnavailableError) as ctx:
+        with (
+            mock.patch.object(gdelt.requests, "get", return_value=resp),
+            self.assertRaises(VendorUnavailableError) as ctx,
+        ):
             gdelt._request("doc/doc", {})
         self.assertIn("429", str(ctx.exception))
 
     def test_network_error_raises_vendor_unavailable(self):
-        with mock.patch.object(gdelt.requests, "get",
-                               side_effect=requests.ConnectionError("boom")), \
-             self.assertRaises(VendorUnavailableError):
+        with (
+            mock.patch.object(gdelt.requests, "get", side_effect=requests.ConnectionError("boom")),
+            self.assertRaises(VendorUnavailableError),
+        ):
             gdelt._request("doc/doc", {})
 
     def test_unparseable_seendate_articles_excluded(self):
         # Articles with no seendate are dropped; if all are undated -> NoMarketData.
         body = {"articles": [{"title": "X", "domain": "d", "url": "u", "seendate": ""}]}
-        with mock.patch.object(gdelt, "_request", return_value=body), \
-             self.assertRaises(NoMarketDataError):
+        with (
+            mock.patch.object(gdelt, "_request", return_value=body),
+            self.assertRaises(NoMarketDataError),
+        ):
             gdelt.get_news("RELIANCE.NS", "2026-01-01", "2026-01-10")
 
     def test_lookahead_no_article_after_end_date(self):
@@ -120,12 +131,37 @@ class GdeltGetNewsTests(unittest.TestCase):
         self.assertNotIn("Article 1", out)  # 2026-01-20 is after end_date
 
     def test_chunks_called_multiple_times_for_long_window(self):
-        # A 30-day window must be chunked into 14-day slabs (3 calls).
+        # A 400-day window exceeds the 365-day DOC-API slab and must be
+        # chunked into two calls; a 30-day window is a single call.
         body = {"articles": []}
-        with mock.patch.object(gdelt, "_request", return_value=body) as req, \
-             self.assertRaises(NoMarketDataError):
-            gdelt.get_news("RELIANCE.NS", "2026-01-01", "2026-01-30")
-        self.assertEqual(req.call_count, 3)  # 14+14+3 = 30 days
+        with (
+            mock.patch.object(gdelt, "_request", return_value=body) as req,
+            self.assertRaises(NoMarketDataError),
+        ):
+            gdelt.get_news("RELIANCE.NS", "2026-01-01", "2026-03-30")
+        self.assertEqual(req.call_count, 1)  # 89 days fits one slab
+        with (
+            mock.patch.object(gdelt, "_request", return_value=body) as req,
+            self.assertRaises(NoMarketDataError),
+        ):
+            gdelt.get_news("RELIANCE.NS", "2025-01-01", "2026-01-01")
+        self.assertEqual(req.call_count, 2)  # 366 days -> 365-day slab + 1-day
+        # tail, so two calls
+
+    def test_absolute_date_bounds_sent_per_chunk(self):
+        # Each chunk must carry GDELT absolute bounds addressing that slab,
+        # not a rolling timespan measured from now.
+        seen = []
+
+        def _capture(endpoint, params):
+            seen.append(dict(params))
+            return {"articles": _articles(["2026-01-05"])}
+
+        with mock.patch.object(gdelt, "_request", side_effect=_capture):
+            gdelt.get_news("RELIANCE.NS", "2026-01-01", "2026-01-10")
+        self.assertNotIn("timespan", seen[0])
+        self.assertEqual(seen[0]["startdatetime"], "20260101000000")
+        self.assertEqual(seen[0]["enddatetime"], "20260110235959")
 
     def test_sourcecountry_param_passed_for_indian_symbols(self):
         seen = {}
@@ -155,6 +191,7 @@ class GdeltGetNewsTests(unittest.TestCase):
 # get_global_news
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class GdeltGlobalNewsTests(unittest.TestCase):
     def setUp(self):
@@ -164,7 +201,8 @@ class GdeltGlobalNewsTests(unittest.TestCase):
         config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
 
     def test_look_back_days_honored(self):
-        # Explicit look_back_days must appear in the GDELT timespan param.
+        # Explicit look_back_days must bound the absolute GDELT search window,
+        # not a rolling timespan that ignores the requested dates.
         seen = {}
 
         def _capture(endpoint, params):
@@ -173,22 +211,34 @@ class GdeltGlobalNewsTests(unittest.TestCase):
 
         with mock.patch.object(gdelt, "_request", side_effect=_capture):
             gdelt.get_global_news("2026-01-10", look_back_days=14, limit=5)
-        self.assertEqual(seen.get("timespan"), "14d")
+        self.assertNotIn("timespan", seen)
+        self.assertEqual(seen.get("startdatetime"), "20251227000000")
+        self.assertEqual(seen.get("enddatetime"), "20260110235959")
         self.assertEqual(seen.get("maxrecords"), 5)
 
     def test_limit_caps_articles_returned(self):
         # GDELT may return more than `limit`; the renderer must cap it.
-        body = {"articles": _articles([
-            "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05",
-        ])}
+        body = {
+            "articles": _articles(
+                [
+                    "2026-01-01",
+                    "2026-01-02",
+                    "2026-01-03",
+                    "2026-01-04",
+                    "2026-01-05",
+                ]
+            )
+        }
         with mock.patch.object(gdelt, "_request", return_value=body):
             out = gdelt.get_global_news("2026-01-10", look_back_days=14, limit=3)
         # limit=3 caps the rendered article count to 3
         self.assertEqual(out.count("### Article"), 3)
 
     def test_global_news_no_articles_raises_no_market_data(self):
-        with mock.patch.object(gdelt, "_request", return_value={"articles": []}), \
-             self.assertRaises(NoMarketDataError):
+        with (
+            mock.patch.object(gdelt, "_request", return_value={"articles": []}),
+            self.assertRaises(NoMarketDataError),
+        ):
             gdelt.get_global_news("2026-01-10", look_back_days=14, limit=5)
 
     def test_global_news_empty_queries_config_raises_no_market_data(self):
@@ -200,11 +250,17 @@ class GdeltGlobalNewsTests(unittest.TestCase):
         # Same URL returned by two queries must appear only once.
         set_config({"global_news_queries": ["queryA", "queryB"]})  # exactly 2 -> 2 GDELT calls
         dup = {
-            "seendate": "20260105T120000Z", "title": "Dup", "domain": "d.com",
+            "seendate": "20260105T120000Z",
+            "title": "Dup",
+            "domain": "d.com",
             "url": "https://example.com/dup",
         }
-        other = {"seendate": "20260105T120000Z", "title": "Other", "domain": "e.com",
-                 "url": "https://example.com/other"}
+        other = {
+            "seendate": "20260105T120000Z",
+            "title": "Other",
+            "domain": "e.com",
+            "url": "https://example.com/other",
+        }
         calls = {"n": 0}
         bodies = [
             {"articles": [dup, other]},
@@ -224,12 +280,19 @@ class GdeltGlobalNewsTests(unittest.TestCase):
 
     def test_global_news_future_articles_excluded(self):
         # An article after as_of_date must not leak into the output.
-        future = {"seendate": "20260201T000000Z", "title": "FUTURE",
-                  "domain": "d.com", "url": "https://example.com/future"}
-        past = {"seendate": "20260105T120000Z", "title": "PAST",
-                "domain": "d.com", "url": "https://example.com/past"}
-        with mock.patch.object(gdelt, "_request",
-                               return_value={"articles": [past, future]}):
+        future = {
+            "seendate": "20260201T000000Z",
+            "title": "FUTURE",
+            "domain": "d.com",
+            "url": "https://example.com/future",
+        }
+        past = {
+            "seendate": "20260105T120000Z",
+            "title": "PAST",
+            "domain": "d.com",
+            "url": "https://example.com/past",
+        }
+        with mock.patch.object(gdelt, "_request", return_value={"articles": [past, future]}):
             out = gdelt.get_global_news("2026-01-10", look_back_days=14, limit=10)
         self.assertIn("PAST", out)
         self.assertNotIn("FUTURE", out)
@@ -238,6 +301,7 @@ class GdeltGlobalNewsTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Router: gdelt in the chain
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class GdeltRouterTests(unittest.TestCase):
@@ -277,8 +341,10 @@ class GdeltRouterTests(unittest.TestCase):
 
         # Directly: the keyless vendor raises NoMarketDataError (not a
         # VendorNotConfiguredError) when it has no articles.
-        with mock.patch.object(gdelt, "_request", return_value={"articles": []}), \
-             self.assertRaises(NoMarketDataError):
+        with (
+            mock.patch.object(gdelt, "_request", return_value={"articles": []}),
+            self.assertRaises(NoMarketDataError),
+        ):
             gdelt.get_news("RELIANCE.NS", "2026-01-01", "2026-01-10")
 
         # And that error must NOT be a VendorNotConfiguredError, so the router
@@ -315,6 +381,7 @@ class GdeltRouterTests(unittest.TestCase):
 # Config: news_data default chain includes gdelt and is overridable
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class GdeltConfigTests(unittest.TestCase):
     def setUp(self):
@@ -325,21 +392,25 @@ class GdeltConfigTests(unittest.TestCase):
 
     def test_default_news_data_chain_includes_gdelt(self):
         from tradingagents.dataflows.config import get_config
+
         chain = get_config()["data_vendors"]["news_data"]
         self.assertIn("gdelt", chain)
 
     def test_news_data_chain_is_overridable(self):
         set_config({"data_vendors": {"news_data": "gdelt"}})
         from tradingagents.dataflows.config import get_config
+
         chain = get_config()["data_vendors"]["news_data"]
         self.assertEqual(chain, "gdelt")
 
     def test_global_news_lookback_days_default(self):
         from tradingagents.dataflows.config import get_config
+
         self.assertEqual(get_config()["global_news_lookback_days"], 7)
 
     def test_global_news_article_limit_default(self):
         from tradingagents.dataflows.config import get_config
+
         self.assertEqual(get_config()["global_news_article_limit"], 10)
 
 
@@ -347,10 +418,12 @@ class GdeltConfigTests(unittest.TestCase):
 # AV alias: NSE (.NS) and BSE (.BO) map to the AV ticker, yfinance keeps .NS/.BO
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class AvAliasTests(unittest.TestCase):
     def test_nse_symbol_maps_to_av_bo_suffix(self):
         from tradingagents.dataflows.symbols import normalize_symbol, to_alpha_vantage_symbol
+
         canonical = normalize_symbol("RELIANCE.NS")
         self.assertEqual(canonical, "RELIANCE.NS")  # yfinance keeps .NS
         av_symbol = to_alpha_vantage_symbol(canonical)
@@ -358,6 +431,7 @@ class AvAliasTests(unittest.TestCase):
 
     def test_bse_symbol_maps_to_av_bo_suffix(self):
         from tradingagents.dataflows.symbols import normalize_symbol, to_alpha_vantage_symbol
+
         canonical = normalize_symbol("RELIANCE.BO")
         self.assertEqual(canonical, "RELIANCE.BO")  # yfinance keeps .BO
         av_symbol = to_alpha_vantage_symbol(canonical)
@@ -366,6 +440,7 @@ class AvAliasTests(unittest.TestCase):
     def test_nse_symbol_yfinance_gets_ns_av_gets_bo(self):
         """The design choice: yfinance sees .NS, AV sees .BO."""
         from tradingagents.dataflows.symbols import normalize_symbol, to_alpha_vantage_symbol
+
         yahoo_sym = normalize_symbol("TCS.NS")
         av_sym = to_alpha_vantage_symbol(yahoo_sym)
         self.assertEqual(yahoo_sym, "TCS.NS")
@@ -373,18 +448,22 @@ class AvAliasTests(unittest.TestCase):
 
     def test_us_symbol_unchanged_in_av_mapping(self):
         from tradingagents.dataflows.symbols import normalize_symbol, to_alpha_vantage_symbol
+
         self.assertEqual(to_alpha_vantage_symbol(normalize_symbol("AAPL")), "AAPL")
 
     def test_av_get_news_queries_with_av_symbol_not_yahoo_symbol(self):
         """The AV get_news must pass the AV-spelled symbol, not the Yahoo one."""
         import tradingagents.dataflows.vendors.alpha_vantage.news as av_news
+
         seen = {}
-        with mock.patch.object(av_news, "_make_api_request",
-                               side_effect=lambda fn, params: seen.update(params) or "{}"):
+        with mock.patch.object(
+            av_news, "_make_api_request", side_effect=lambda fn, params: seen.update(params) or "{}"
+        ):
             av_news.get_news("RELIANCE.NS", "2026-01-01", "2026-01-10")
         self.assertEqual(seen.get("tickers"), "RELIANCE.BO")
         # yfinance path still gets the .NS symbol
         from tradingagents.dataflows.symbols import normalize_symbol
+
         self.assertEqual(normalize_symbol("RELIANCE.NS"), "RELIANCE.NS")
 
 

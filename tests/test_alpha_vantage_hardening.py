@@ -6,6 +6,7 @@ responses mislabeled as rate limits and silently treated as transient), and
 string, not a dict), and the date trim that keeps post-end_date bars out of a
 historical run.
 """
+
 import json
 
 import pytest
@@ -31,6 +32,7 @@ def _patched_get(body, capture=None):
         if capture is not None:
             capture.update(kwargs)
         return _FakeResponse(body)
+
     return fake_get
 
 
@@ -55,16 +57,21 @@ def test_premium_gate_is_not_mislabeled_as_rate_limit(monkeypatch):
     # A free key hitting a premium endpoint (e.g. NEWS_SENTIMENT) gets a
     # "premium endpoint" notice. It must surface as a premium error, not a
     # transient rate limit, which would imply a retry will succeed.
-    body = ('{"Information": "Thank you for using Alpha Vantage! This is a premium '
-            'endpoint. You may subscribe to any of the premium plans at "}')
+    body = (
+        '{"Information": "Thank you for using Alpha Vantage! This is a premium '
+        'endpoint. You may subscribe to any of the premium plans at "}'
+    )
     monkeypatch.setattr(net.requests, "get", _patched_get(body))
     with pytest.raises(av.AlphaVantagePremiumError) as raised:
         av._make_api_request("NEWS_SENTIMENT", {"tickers": "AAPL"})
     # Still a VendorUnavailableError so the router skips to the next vendor.
     from tradingagents.dataflows.errors import VendorUnavailableError
+
     assert isinstance(raised.value, VendorUnavailableError)
     # A genuine rate limit is a different error.
-    monkeypatch.setattr(net.requests, "get", _patched_get('{"Note": "API call frequency is 5 calls per minute."}'))
+    monkeypatch.setattr(
+        net.requests, "get", _patched_get('{"Note": "API call frequency is 5 calls per minute."}')
+    )
     with pytest.raises(av.AlphaVantageRateLimitError):
         av._make_api_request("NEWS_SENTIMENT", {"tickers": "AAPL"})
 
@@ -73,13 +80,19 @@ def test_premium_gate_is_not_mislabeled_as_rate_limit(monkeypatch):
 def test_invalid_key_not_mislabeled_as_rate_limit(monkeypatch):
     # AV's invalid-key notice mentions "API key"; it must NOT be treated as a
     # (transient) rate limit, but surface as a real configuration error (#991).
-    body = ('{"Information": "the parameter apikey is invalid or missing. '
-            'Please claim your free API key on (https://www.alphavantage.co/support/#api-key)."}')
+    body = (
+        '{"Information": "the parameter apikey is invalid or missing. '
+        'Please claim your free API key on (https://www.alphavantage.co/support/#api-key)."}'
+    )
     monkeypatch.setattr(net.requests, "get", _patched_get(body))
     with pytest.raises(av.AlphaVantageNotConfiguredError):
         av._make_api_request("TIME_SERIES_DAILY", {"symbol": "AAPL"})
     with pytest.raises(av.AlphaVantageRateLimitError):  # sanity: rate-limit path still distinct
-        monkeypatch.setattr(net.requests, "get", _patched_get('{"Note": "API call frequency is 5 calls per minute."}'))
+        monkeypatch.setattr(
+            net.requests,
+            "get",
+            _patched_get('{"Note": "API call frequency is 5 calls per minute."}'),
+        )
         av._make_api_request("TIME_SERIES_DAILY", {"symbol": "AAPL"})
 
 
@@ -106,10 +119,13 @@ def test_a_rejected_request_is_unavailable_not_data(monkeypatch):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("body", [
-    '{"Note": "Thank you for using key k-secret. API call frequency is 5 calls per minute."}',
-    '{"Information": "the apikey k-secret is invalid or missing."}',
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"Note": "Thank you for using key k-secret. API call frequency is 5 calls per minute."}',
+        '{"Information": "the apikey k-secret is invalid or missing."}',
+    ],
+)
 def test_the_key_never_reaches_an_error_message(monkeypatch, body):
     """Alpha Vantage can echo the key in its notices; error text reaches logs and reports."""
     from tradingagents.dataflows.errors import VendorError
@@ -122,17 +138,19 @@ def test_the_key_never_reaches_an_error_message(monkeypatch, body):
     assert "k-secret" not in str(raised.value)
 
 
-_FUNDAMENTALS_JSON = json.dumps({
-    "symbol": "AAPL",
-    "annualReports": [
-        {"fiscalDateEnding": "2025-12-31", "totalAssets": "1"},   # future -> must drop
-        {"fiscalDateEnding": "2023-12-31", "totalAssets": "2"},   # past   -> must keep
-    ],
-    "quarterlyReports": [
-        {"fiscalDateEnding": "2024-06-30", "totalAssets": "3"},   # future -> must drop
-        {"fiscalDateEnding": "2023-09-30", "totalAssets": "4"},   # past   -> must keep
-    ],
-})
+_FUNDAMENTALS_JSON = json.dumps(
+    {
+        "symbol": "AAPL",
+        "annualReports": [
+            {"fiscalDateEnding": "2025-12-31", "totalAssets": "1"},  # future -> must drop
+            {"fiscalDateEnding": "2023-12-31", "totalAssets": "2"},  # past   -> must keep
+        ],
+        "quarterlyReports": [
+            {"fiscalDateEnding": "2024-06-30", "totalAssets": "3"},  # future -> must drop
+            {"fiscalDateEnding": "2023-09-30", "totalAssets": "4"},  # past   -> must keep
+        ],
+    }
+)
 
 
 @pytest.mark.unit
@@ -147,7 +165,7 @@ def test_fundamentals_no_curr_date_passes_through(monkeypatch):
 
 _DAILY_CSV = (
     "timestamp,open,high,low,close,volume\n"
-    "2024-05-13,1,1,1,1,10\n"   # after end_date -> must never be served
+    "2024-05-13,1,1,1,1,10\n"  # after end_date -> must never be served
     "2024-05-10,1,1,1,1,10\n"
     "2024-05-09,1,1,1,1,10\n"
 )
@@ -165,8 +183,7 @@ def test_stock_data_is_trimmed_to_the_requested_window(monkeypatch):
 def test_unparseable_body_is_never_served_untrimmed(monkeypatch):
     """The trim used to swallow the failure and return the whole body, putting
     bars after end_date into a backtest. It must raise instead."""
-    monkeypatch.setattr(avs, "_make_api_request",
-                        lambda *a, **k: "timestamp,close\nnot-a-date,1\n")
+    monkeypatch.setattr(avs, "_make_api_request", lambda *a, **k: "timestamp,close\nnot-a-date,1\n")
 
     with pytest.raises(ValueError):
         avs.get_stock("IBM", "2024-05-09", "2024-05-10")
@@ -181,11 +198,14 @@ def test_empty_body_still_passes_through(monkeypatch):
 def test_request_error_message_carries_no_key(monkeypatch):
     # Alpha Vantage also sends its key in the URL (#1324).
     import requests
+
     key = "AVKEY1234567890XYZ"
     monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", key)
 
     def boom(*a, **k):
-        raise requests.Timeout(f"Read timed out. url: https://www.alphavantage.co/query?apikey={key}")
+        raise requests.Timeout(
+            f"Read timed out. url: https://www.alphavantage.co/query?apikey={key}"
+        )
 
     monkeypatch.setattr(net.requests, "get", boom)
     with pytest.raises(requests.Timeout) as caught:
@@ -198,10 +218,15 @@ def test_global_news_omitted_optionals_use_the_configured_defaults(monkeypatch):
     """The tool passes None for an omitted look_back_days or limit (#1326)."""
     from tradingagents.dataflows.vendors.alpha_vantage import news as alpha_vantage_news
 
-    monkeypatch.setattr(alpha_vantage_news, "get_config",
-                        lambda: {"global_news_lookback_days": 3, "global_news_article_limit": 9})
+    monkeypatch.setattr(
+        alpha_vantage_news,
+        "get_config",
+        lambda: {"global_news_lookback_days": 3, "global_news_article_limit": 9},
+    )
     seen = {}
-    monkeypatch.setattr(alpha_vantage_news, "_make_api_request", lambda fn, params: seen.update(params) or "{}")
+    monkeypatch.setattr(
+        alpha_vantage_news, "_make_api_request", lambda fn, params: seen.update(params) or "{}"
+    )
 
     alpha_vantage_news.get_global_news("2026-08-14", None, None)
 
@@ -216,8 +241,9 @@ def test_the_news_window_includes_the_analysis_day(monkeypatch):
     from tradingagents.dataflows.vendors.alpha_vantage import news as alpha_vantage_news
 
     seen = {}
-    monkeypatch.setattr(alpha_vantage_news, "_make_api_request",
-                        lambda fn, params: seen.update(params) or "{}")
+    monkeypatch.setattr(
+        alpha_vantage_news, "_make_api_request", lambda fn, params: seen.update(params) or "{}"
+    )
 
     alpha_vantage_news.get_news("AAPL", "2026-03-10", "2026-03-14")
 
@@ -245,8 +271,9 @@ def test_ticker_news_asks_for_only_as_many_articles_as_configured(monkeypatch):
 
     monkeypatch.setattr(alpha_vantage_news, "get_config", lambda: {"news_article_limit": 8})
     seen = {}
-    monkeypatch.setattr(alpha_vantage_news, "_make_api_request",
-                        lambda fn, params: seen.update(params) or "{}")
+    monkeypatch.setattr(
+        alpha_vantage_news, "_make_api_request", lambda fn, params: seen.update(params) or "{}"
+    )
 
     alpha_vantage_news.get_news("AAPL", "2026-03-10", "2026-03-14")
 

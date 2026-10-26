@@ -31,31 +31,61 @@ def _fact(end, val, filed, form="10-K", fp="FY", start=None):
 FACTS = {
     "cik": 320193,
     "entityName": "Apple Inc.",
-    "facts": {"us-gaap": {
-        "Assets": {"units": {"USD": [
-            _fact("2008-09-27", 39_572_000_000, "2008-11-05"),
-            _fact("2008-09-27", 36_171_000_000, "2010-01-25", form="10-K/A"),
-            _fact("2022-03-26", 350_662_000_000, "2022-04-29", form="10-Q", fp="Q2"),
-            _fact("2024-09-28", 364_980_000_000, "2024-11-01"),
-        ]}},
-        "Liabilities": {"units": {"USD": [_fact("2024-09-28", 308_030_000_000, "2024-11-01")]}},
-        "EarningsPerShareDiluted": {"units": {"USD/shares": [
-            _fact("2024-09-28", 6.08, "2024-11-01", start="2023-09-30"),
-        ]}},
-        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
-            # One filing reports the quarter and the year to date under one end date.
-            _fact("2025-12-31", 81_300_000_000, "2026-01-29", form="10-Q", fp="Q2", start="2025-10-01"),
-            _fact("2025-12-31", 158_900_000_000, "2026-01-29", form="10-Q", fp="Q2", start="2025-07-01"),
-            _fact("2024-09-28", 391_035_000_000, "2024-11-01", start="2023-09-30"),
-        ]}},
-    }},
+    "facts": {
+        "us-gaap": {
+            "Assets": {
+                "units": {
+                    "USD": [
+                        _fact("2008-09-27", 39_572_000_000, "2008-11-05"),
+                        _fact("2008-09-27", 36_171_000_000, "2010-01-25", form="10-K/A"),
+                        _fact("2022-03-26", 350_662_000_000, "2022-04-29", form="10-Q", fp="Q2"),
+                        _fact("2024-09-28", 364_980_000_000, "2024-11-01"),
+                    ]
+                }
+            },
+            "Liabilities": {"units": {"USD": [_fact("2024-09-28", 308_030_000_000, "2024-11-01")]}},
+            "EarningsPerShareDiluted": {
+                "units": {
+                    "USD/shares": [
+                        _fact("2024-09-28", 6.08, "2024-11-01", start="2023-09-30"),
+                    ]
+                }
+            },
+            "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                "units": {
+                    "USD": [
+                        # One filing reports the quarter and the year to date under one end date.
+                        _fact(
+                            "2025-12-31",
+                            81_300_000_000,
+                            "2026-01-29",
+                            form="10-Q",
+                            fp="Q2",
+                            start="2025-10-01",
+                        ),
+                        _fact(
+                            "2025-12-31",
+                            158_900_000_000,
+                            "2026-01-29",
+                            form="10-Q",
+                            fp="Q2",
+                            start="2025-07-01",
+                        ),
+                        _fact("2024-09-28", 391_035_000_000, "2024-11-01", start="2023-09-30"),
+                    ]
+                }
+            },
+        }
+    },
 }
 
 
 @pytest.fixture(autouse=True)
 def _no_network_or_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(sec_edgar, "get_config", lambda: {"data_cache_dir": str(tmp_path)})
-    monkeypatch.setattr(sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else FACTS)
+    monkeypatch.setattr(
+        sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else FACTS
+    )
 
 
 @pytest.mark.unit
@@ -111,8 +141,11 @@ def test_the_report_states_the_vintage_rule():
 
 @pytest.mark.unit
 def test_a_filer_with_no_usable_facts_reads_differently_from_a_non_filer(monkeypatch):
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: TICKER_MAP if "company_tickers" in url else {"facts": {}})
+    monkeypatch.setattr(
+        sec_edgar,
+        "_fetch_json",
+        lambda url: TICKER_MAP if "company_tickers" in url else {"facts": {}},
+    )
     with pytest.raises(NoMarketDataError, match="no us-gaap facts"):
         sec_edgar.get_balance_sheet("AAPL", "annual", "2026-01-01")
 
@@ -121,8 +154,11 @@ def test_a_filer_with_no_usable_facts_reads_differently_from_a_non_filer(monkeyp
 def test_company_facts_are_fetched_once_per_company_not_once_per_date(tmp_path, monkeypatch):
     """A sweep asks for many dates; the filing history is the same file."""
     calls = []
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: calls.append(url) or (TICKER_MAP if "company_tickers" in url else FACTS))
+    monkeypatch.setattr(
+        sec_edgar,
+        "_fetch_json",
+        lambda url: calls.append(url) or (TICKER_MAP if "company_tickers" in url else FACTS),
+    )
     for date in ("2024-11-15", "2025-01-15", "2025-06-15"):
         sec_edgar.get_balance_sheet("AAPL", "annual", date)
     assert len([u for u in calls if "companyfacts" in u]) == 1
@@ -200,23 +236,44 @@ def test_a_server_error_lets_the_next_vendor_try(monkeypatch):
 def test_older_periods_fall_back_to_the_tag_the_filer_used_then():
     """Filers renamed lines when the revenue standard changed, so one tag covers
     only recent years. Each period takes one tag, never a sum of two."""
-    facts = {"Revenues": {"units": {"USD": [_fact("2015-09-26", 233_715_000_000, "2015-10-28",
-                                                 start="2014-09-28")]}},
-             "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
-                 _fact("2024-09-28", 391_035_000_000, "2024-11-01", start="2023-09-30")]}}}
-    values, unit = sec_edgar._as_of(facts, ("RevenueFromContractWithCustomerExcludingAssessedTax",
-                                            "Revenues"), "2026-01-01", ((300, 400),))
+    facts = {
+        "Revenues": {
+            "units": {
+                "USD": [_fact("2015-09-26", 233_715_000_000, "2015-10-28", start="2014-09-28")]
+            }
+        },
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "units": {
+                "USD": [_fact("2024-09-28", 391_035_000_000, "2024-11-01", start="2023-09-30")]
+            }
+        },
+    }
+    values, unit = sec_edgar._as_of(
+        facts,
+        ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"),
+        "2026-01-01",
+        ((300, 400),),
+    )
     assert values == {("2015-09-26", 0): 233_715_000_000, ("2024-09-28", 0): 391_035_000_000}
     assert unit == "USD"
 
 
 @pytest.mark.unit
 def test_a_period_reported_under_two_tags_takes_the_preferred_one_not_both():
-    facts = {"Revenues": {"units": {"USD": [_fact("2024-09-28", 111, "2024-11-01", start="2023-09-30")]}},
-             "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
-                 _fact("2024-09-28", 999, "2024-11-01", start="2023-09-30")]}}}
-    values, _ = sec_edgar._as_of(facts, ("RevenueFromContractWithCustomerExcludingAssessedTax",
-                                         "Revenues"), "2026-01-01", ((300, 400),))
+    facts = {
+        "Revenues": {
+            "units": {"USD": [_fact("2024-09-28", 111, "2024-11-01", start="2023-09-30")]}
+        },
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "units": {"USD": [_fact("2024-09-28", 999, "2024-11-01", start="2023-09-30")]}
+        },
+    }
+    values, _ = sec_edgar._as_of(
+        facts,
+        ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"),
+        "2026-01-01",
+        ((300, 400),),
+    )
     assert values == {("2024-09-28", 0): 999}
 
 
@@ -226,18 +283,33 @@ def test_the_default_identification_names_the_package_version(monkeypatch):
     import tradingagents
 
     monkeypatch.delenv("SEC_EDGAR_USER_AGENT", raising=False)
-    assert sec_edgar._user_agent() == f"TradingAgents/{tradingagents.__version__} (contact@example.com)"
+    assert (
+        sec_edgar._user_agent()
+        == f"TradingAgents/{tradingagents.__version__} (contact@example.com)"
+    )
 
 
 @pytest.mark.unit
 def test_capital_expenditure_is_found_under_either_tag_filers_use(monkeypatch):
     """NVIDIA and Amazon report purchases of productive assets, not of property and equipment."""
-    facts = {"facts": {"us-gaap": {"PaymentsToAcquireProductiveAssets": {"units": {"USD": [
-        _fact("2024-12-31", 70_000_000, "2025-02-10", start="2024-01-01")]}}}}}
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: TICKER_MAP if "company_tickers" in url else facts)
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "PaymentsToAcquireProductiveAssets": {
+                    "units": {
+                        "USD": [_fact("2024-12-31", 70_000_000, "2025-02-10", start="2024-01-01")]
+                    }
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(
+        sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else facts
+    )
     out = sec_edgar.get_cashflow("AAPL", "annual", "2025-03-01")
-    assert [r for r in out.splitlines() if r.startswith("Capital Expenditure")] == ["Capital Expenditure,70"]
+    assert [r for r in out.splitlines() if r.startswith("Capital Expenditure")] == [
+        "Capital Expenditure,70"
+    ]
 
 
 def _columns(out):
@@ -257,12 +329,30 @@ def test_an_annual_balance_sheet_has_no_quarter_end_columns():
 def test_a_twelve_month_total_from_a_quarterly_report_is_not_a_fiscal_year(monkeypatch):
     """Amazon's 10-Qs report trailing twelve months, which passed the annual span
     check and read as fiscal years overlapping the real ones."""
-    facts = {"facts": {"us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
-        _fact("2024-12-31", 115_000_000_000, "2025-02-07", start="2024-01-01"),
-        _fact("2025-03-31", 113_000_000_000, "2025-05-02", form="10-Q", fp="Q1", start="2024-04-01"),
-    ]}}}}}
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: TICKER_MAP if "company_tickers" in url else facts)
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "NetCashProvidedByUsedInOperatingActivities": {
+                    "units": {
+                        "USD": [
+                            _fact("2024-12-31", 115_000_000_000, "2025-02-07", start="2024-01-01"),
+                            _fact(
+                                "2025-03-31",
+                                113_000_000_000,
+                                "2025-05-02",
+                                form="10-Q",
+                                fp="Q1",
+                                start="2024-04-01",
+                            ),
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(
+        sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else facts
+    )
     assert _columns(sec_edgar.get_cashflow("AAPL", "annual", "2025-06-01")) == ["2024-12-31"]
 
 
@@ -270,16 +360,31 @@ def test_a_twelve_month_total_from_a_quarterly_report_is_not_a_fiscal_year(monke
 def test_a_recast_outside_the_annual_report_still_counts_from_its_filing(monkeypatch):
     """Filers recast past years in an 8-K after a split or spin-off. The annual
     report decides the columns; the value is the latest filing of any form."""
-    facts = {"facts": {"us-gaap": {"EarningsPerShareDiluted": {"units": {"USD/shares": [
-        _fact("2017-03-31", 16.97, "2017-06-15", form="20-F", start="2016-04-01"),
-        _fact("2017-03-31", 2.12, "2019-09-30", form="6-K", start="2016-04-01"),
-    ]}}}}}
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: TICKER_MAP if "company_tickers" in url else facts)
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "EarningsPerShareDiluted": {
+                    "units": {
+                        "USD/shares": [
+                            _fact(
+                                "2017-03-31", 16.97, "2017-06-15", form="20-F", start="2016-04-01"
+                            ),
+                            _fact("2017-03-31", 2.12, "2019-09-30", form="6-K", start="2016-04-01"),
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(
+        sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else facts
+    )
 
     def eps(date):
         out = sec_edgar.get_income_statement("AAPL", "annual", date)
-        return [line for line in out.splitlines() if line.startswith("Diluted EPS")][0].split(",")[1]
+        return [line for line in out.splitlines() if line.startswith("Diluted EPS")][0].split(",")[
+            1
+        ]
 
     assert eps("2019-01-01") == "16.97"
     assert eps("2020-01-01") == "2.12"
@@ -294,26 +399,62 @@ def test_a_cash_flow_filed_year_to_date_is_served_with_its_span(monkeypatch):
         _fact("2026-03-28", 53_000_000_000, "2026-05-01", form="10-Q", fp="Q2", start="2025-09-28"),
         _fact("2026-06-27", 81_000_000_000, "2026-08-01", form="10-Q", fp="Q3", start="2025-09-28"),
     ]
-    facts = {"facts": {"us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": ytd}}}}}
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: TICKER_MAP if "company_tickers" in url else facts)
+    facts = {
+        "facts": {
+            "us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": ytd}}}
+        }
+    }
+    monkeypatch.setattr(
+        sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else facts
+    )
 
     out = sec_edgar.get_cashflow("AAPL", "quarterly", "2026-09-28")
 
     assert _columns(out) == ["2025-12-27", "2026-03-28 (6 months)", "2026-06-27 (9 months)"]
-    assert [r for r in out.splitlines() if r.startswith("Operating Cash Flow")] == ["Operating Cash Flow,30000,53000,81000"]
+    assert [r for r in out.splitlines() if r.startswith("Operating Cash Flow")] == [
+        "Operating Cash Flow,30000,53000,81000"
+    ]
 
 
 @pytest.mark.unit
 def test_a_row_filed_only_year_to_date_keeps_its_figure_beside_a_row_filed_by_quarter(monkeypatch):
-    facts = {"facts": {"us-gaap": {
-        "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
-            _fact("2026-06-30", 120_000_000, "2026-08-01", form="10-Q", fp="Q2", start="2026-01-01")]}},
-        "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
-            _fact("2026-06-30", 10_000_000, "2026-08-01", form="10-Q", fp="Q2", start="2026-04-01")]}},
-    }}}
-    monkeypatch.setattr(sec_edgar, "_fetch_json",
-                        lambda url: TICKER_MAP if "company_tickers" in url else facts)
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "NetCashProvidedByUsedInOperatingActivities": {
+                    "units": {
+                        "USD": [
+                            _fact(
+                                "2026-06-30",
+                                120_000_000,
+                                "2026-08-01",
+                                form="10-Q",
+                                fp="Q2",
+                                start="2026-01-01",
+                            )
+                        ]
+                    }
+                },
+                "PaymentsToAcquirePropertyPlantAndEquipment": {
+                    "units": {
+                        "USD": [
+                            _fact(
+                                "2026-06-30",
+                                10_000_000,
+                                "2026-08-01",
+                                form="10-Q",
+                                fp="Q2",
+                                start="2026-04-01",
+                            )
+                        ]
+                    }
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(
+        sec_edgar, "_fetch_json", lambda url: TICKER_MAP if "company_tickers" in url else facts
+    )
 
     out = sec_edgar.get_cashflow("AAPL", "quarterly", "2026-09-28")
 

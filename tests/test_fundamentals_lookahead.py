@@ -13,6 +13,7 @@ so switching ``fundamental_data`` between them cannot reintroduce the leak. The
 statement tools stay point-in-time by filtering on ``as_of_date``, and a live run
 is unchanged. All API access is mocked.
 """
+
 from __future__ import annotations
 
 from unittest import mock
@@ -41,22 +42,34 @@ _INFO = {
 }
 
 # Values that must never reach a historical run.
-_LEAKY = ("3500000000000", "34.2", "260.1", "391000000000",
-          "Apple Inc.", "Technology", "Consumer Electronics")
+_LEAKY = (
+    "3500000000000",
+    "34.2",
+    "260.1",
+    "391000000000",
+    "Apple Inc.",
+    "Technology",
+    "Consumer Electronics",
+)
 
 
 def _yf(as_of_date, info=_INFO, today=_TODAY):
-    with mock.patch.object(date_window, "get_current_date", return_value=today), \
-         mock.patch.object(yahoo_fundamentals, "yf_retry", lambda fn: info), \
-         mock.patch.object(yahoo_market.yf, "Ticker"):
+    with (
+        mock.patch.object(date_window, "get_current_date", return_value=today),
+        mock.patch.object(yahoo_fundamentals, "yf_retry", lambda fn: info),
+        mock.patch.object(yahoo_market.yf, "Ticker"),
+    ):
         return yahoo_fundamentals.get_fundamentals("AAPL", as_of_date)
 
 
 def _av(as_of_date, today=_TODAY):
     """Alpha Vantage path; the API call is mocked so a leak would be visible."""
-    with mock.patch.object(date_window, "get_current_date", return_value=today), \
-         mock.patch.object(av, "_make_api_request",
-                           return_value="MarketCapitalization: 3500000000000") as req:
+    with (
+        mock.patch.object(date_window, "get_current_date", return_value=today),
+        mock.patch.object(
+            av, "_make_api_request", return_value="MarketCapitalization: 3500000000000"
+        ) as req,
+    ):
         return av.get_fundamentals("AAPL", as_of_date), req
 
 
@@ -82,8 +95,10 @@ class TestYFinanceHistoricalRun:
     def test_the_request_is_not_even_made(self):
         # The response would only be discarded; skipping it also avoids burning
         # vendor quota on a call whose result cannot be used.
-        with mock.patch.object(date_window, "get_current_date", return_value=_TODAY), \
-             mock.patch.object(yahoo_market.yf, "Ticker") as tk:
+        with (
+            mock.patch.object(date_window, "get_current_date", return_value=_TODAY),
+            mock.patch.object(yahoo_market.yf, "Ticker") as tk,
+        ):
             yahoo_fundamentals.get_fundamentals("AAPL", _PAST)
         tk.assert_not_called()
 

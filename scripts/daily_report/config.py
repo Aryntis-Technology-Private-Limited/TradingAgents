@@ -71,7 +71,11 @@ def reports_dir() -> Path:
     raw = os.environ.get("DAILY_REPORTS_DIR", "").strip()
     if raw:
         path = Path(raw)
-        return path if path.is_absolute() else Path(config_module.build_default_config()["results_dir"]) / path
+        return (
+            path
+            if path.is_absolute()
+            else Path(config_module.build_default_config()["results_dir"]) / path
+        )
     return Path(config_module.build_default_config()["results_dir"]) / "reports"
 
 
@@ -136,7 +140,7 @@ def digest_pdf_path(date_str: str | None = None) -> str:
     import datetime
 
     raw = os.environ.get("DAILY_DIGEST_PDF", "").strip()
-    today = (date_str or datetime.date.today().strftime("%Y-%m-%d"))
+    today = date_str or datetime.date.today().strftime("%Y-%m-%d")
     if raw:
         base = Path(raw)
         if base.suffix.lower() == ".pdf":
@@ -147,6 +151,12 @@ def digest_pdf_path(date_str: str | None = None) -> str:
 
 
 __all__ = [
-    "get", "reports_dir", "hour", "until", "run_on_startup", "analysts",
-    "retention_days", "digest_pdf_path",
+    "get",
+    "reports_dir",
+    "hour",
+    "until",
+    "run_on_startup",
+    "analysts",
+    "retention_days",
+    "digest_pdf_path",
 ]

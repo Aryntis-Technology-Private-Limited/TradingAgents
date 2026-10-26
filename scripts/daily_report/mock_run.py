@@ -27,20 +27,26 @@ import random
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
+from scripts.daily_report import config as daily_config, digest, runner as daily_runner
 from tradingagents import default_config as config_module
-from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.dataflows.date_window import get_current_date
-
-from scripts.daily_report import config as daily_config
-from scripts.daily_report import digest
-from scripts.daily_report import runner as daily_runner
+from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 N_TICKERS = 5
 # NSE large-caps, safe_ticker_component-friendly
-POOL = ["TCS.NS", "HDFCBANK.NS", "INFY.NS", "RELIANCE.NS", "SBIN.NS",
-        "ADANIENT.NS", "WIPRO.NS", "LT.NS", "ITC.NS", "MARUTI.NS"]
+POOL = [
+    "TCS.NS",
+    "HDFCBANK.NS",
+    "INFY.NS",
+    "RELIANCE.NS",
+    "SBIN.NS",
+    "ADANIENT.NS",
+    "WIPRO.NS",
+    "LT.NS",
+    "ITC.NS",
+    "MARUTI.NS",
+]
 
 
 def _sweep_workers() -> int:
@@ -67,14 +73,13 @@ def main() -> int:
     print(f"[mock] reports -> {out_dir} · sweep parallelism: {workers}", flush=True)
 
     t1 = time.time()
-    graph = TradingAgentsGraph(daily_config.analysts(), config=config)
+    TradingAgentsGraph(daily_config.analysts(), config=config)
     t_bootstrap = t1 - t0
     print(f"[time] bootstrap (config+graph): {t_bootstrap:.1f}s", flush=True)
 
     # One graph per worker thread - the LangGraph graph is stateful across a
     # single propagate() call, so sharing it across threads races.
-    graphs = [TradingAgentsGraph(daily_config.analysts(), config=config)
-              for _ in range(workers)]
+    graphs = [TradingAgentsGraph(daily_config.analysts(), config=config) for _ in range(workers)]
 
     def _one(slot: int, ticker: str) -> tuple[str, float, str | None]:
         ts = time.time()
@@ -103,11 +108,17 @@ def main() -> int:
                 print(f"  {ticker} done ({dt:.1f}s)", flush=True)
     t_sweep = time.time() - t_sweep_start
     done = [dt for _tk, dt in per_ticker]
-    print(f"[time] sweep total (parallel {workers}): {t_sweep:.1f}s · "
-          f"{len(per_ticker)} ok, {len(failures)} failed", flush=True)
+    print(
+        f"[time] sweep total (parallel {workers}): {t_sweep:.1f}s · "
+        f"{len(per_ticker)} ok, {len(failures)} failed",
+        flush=True,
+    )
     if done:
-        print(f"[time] per-ticker min/avg/max (single-LLM-slot time): "
-              f"{min(done):.1f}s / {sum(done) / len(done):.1f}s / {max(done):.1f}s", flush=True)
+        print(
+            f"[time] per-ticker min/avg/max (single-LLM-slot time): "
+            f"{min(done):.1f}s / {sum(done) / len(done):.1f}s / {max(done):.1f}s",
+            flush=True,
+        )
     for tk, dt in sorted(per_ticker, key=lambda x: x[0]):
         print(f"       {tk}: {dt:.1f}s", flush=True)
 
@@ -127,22 +138,29 @@ def main() -> int:
 
     total = time.time() - t0
     print("\n=== MOCK DAILY RUN SUMMARY ===")
-    print(json.dumps({
-        "date": today,
-        "tickers": tickers,
-        "sweep_workers": workers,
-        "seconds": {
-            "bootstrap": round(t_bootstrap, 1),
-            "sweep_total_wall": round(t_sweep, 1),
-            "sweep_avg_per_ticker_llm_time": round(sum(done) / len(done), 1) if done else None,
-            "digest": round(t_digest, 1),
-            "grand_total_wall": round(total, 1),
-        },
-        "per_ticker_seconds": {tk: round(dt, 1) for tk, dt in sorted(per_ticker)},
-        "failures": [f"{tk}: {msg[:80]}" for tk, msg in failures],
-        "interesting": [d.ticker for d in interesting],
-        "pdf": str(out_pdf),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "date": today,
+                "tickers": tickers,
+                "sweep_workers": workers,
+                "seconds": {
+                    "bootstrap": round(t_bootstrap, 1),
+                    "sweep_total_wall": round(t_sweep, 1),
+                    "sweep_avg_per_ticker_llm_time": round(sum(done) / len(done), 1)
+                    if done
+                    else None,
+                    "digest": round(t_digest, 1),
+                    "grand_total_wall": round(total, 1),
+                },
+                "per_ticker_seconds": {tk: round(dt, 1) for tk, dt in sorted(per_ticker)},
+                "failures": [f"{tk}: {msg[:80]}" for tk, msg in failures],
+                "interesting": [d.ticker for d in interesting],
+                "pdf": str(out_pdf),
+            },
+            indent=2,
+        )
+    )
     return 0 if not failures else 1
 
 

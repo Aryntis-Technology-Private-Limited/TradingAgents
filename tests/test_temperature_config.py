@@ -4,7 +4,6 @@ Temperature is a cross-provider knob: when set it must reach the underlying
 chat client; when unset the provider keeps its own default.
 """
 
-
 import pytest
 
 from tradingagents.llm_clients.factory import create_llm_client
@@ -32,9 +31,7 @@ class TestTemperatureForwarding:
 
     def test_temperature_omitted_leaves_provider_default(self):
         # Not passing temperature must not force it to a value.
-        llm = create_llm_client(
-            provider="openai", model="gpt-4.1", api_key="placeholder"
-        ).get_llm()
+        llm = create_llm_client(provider="openai", model="gpt-4.1", api_key="placeholder").get_llm()
         # langchain's default is unset/None, not 0.0
         assert llm.temperature is None
 
@@ -43,6 +40,7 @@ class TestTemperatureForwarding:
 class TestTemperatureEnvOverlay:
     def test_env_sets_temperature(self, monkeypatch):
         import tradingagents.default_config as dc
+
         monkeypatch.setenv("TRADINGAGENTS_TEMPERATURE", "0.2")
         config = dc.build_default_config()
         # Stored on config (string from env is fine; consumed via float()).
@@ -51,6 +49,7 @@ class TestTemperatureEnvOverlay:
 
     def test_default_temperature_is_none(self, monkeypatch):
         import tradingagents.default_config as dc
+
         monkeypatch.delenv("TRADINGAGENTS_TEMPERATURE", raising=False)
         assert dc.build_default_config()["temperature"] is None
 
@@ -61,6 +60,7 @@ class TestProviderKwargsTemperature:
 
     def _kwargs_for(self, temperature):
         from tradingagents.llm_clients import build_llm_kwargs
+
         return build_llm_kwargs({"llm_provider": "openai", "temperature": temperature})
 
     def test_float_string_coerced(self):

@@ -25,9 +25,11 @@ def test_an_analyst_brief_is_text_not_a_python_object(name):
 
     mod = importlib.import_module(f"tradingagents.agents.analysts.{name}")
     tree = ast.parse(inspect.getsource(mod))
-    briefs = [node.value for node in ast.walk(tree)
-              if isinstance(node, ast.Assign)
-              and getattr(node.targets[0], "id", "") == "system_message"]
+    briefs = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "system_message"
+    ]
     assert briefs, f"{name} has no system_message"
     for brief in briefs:
         assert not isinstance(brief, ast.Tuple), "the brief is a tuple, not text"
@@ -45,13 +47,16 @@ def test_an_analyst_is_not_asked_for_a_trade_call_nothing_reads(name):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("module, factory", [
-    ("tradingagents.agents.researchers.bull_researcher", "create_bull_researcher"),
-    ("tradingagents.agents.researchers.bear_researcher", "create_bear_researcher"),
-    ("tradingagents.agents.risk_mgmt.aggressive_debator", "create_aggressive_debator"),
-    ("tradingagents.agents.risk_mgmt.conservative_debator", "create_conservative_debator"),
-    ("tradingagents.agents.risk_mgmt.neutral_debator", "create_neutral_debator"),
-])
+@pytest.mark.parametrize(
+    "module, factory",
+    [
+        ("tradingagents.agents.researchers.bull_researcher", "create_bull_researcher"),
+        ("tradingagents.agents.researchers.bear_researcher", "create_bear_researcher"),
+        ("tradingagents.agents.risk_mgmt.aggressive_debator", "create_aggressive_debator"),
+        ("tradingagents.agents.risk_mgmt.conservative_debator", "create_conservative_debator"),
+        ("tradingagents.agents.risk_mgmt.neutral_debator", "create_neutral_debator"),
+    ],
+)
 def test_a_report_that_was_never_produced_says_so(module, factory):
     """`--analysts market` leaves three reports empty; presenting them as blank
     sections invites the model to invent the contents."""
@@ -69,16 +74,36 @@ def test_a_report_that_was_never_produced_says_so(module, factory):
             raise NotImplementedError
 
     state = {
-        "company_of_interest": "NVDA", "trade_date": "2026-08-14", "asset_type": "stock",
-        "instrument_context": "", "portfolio_context": "", "past_context": "",
-        "market_report": "RSI 61, price 178.", "sentiment_report": "", "news_report": "",
-        "fundamentals_report": "", "investment_plan": "P", "trader_investment_plan": "T",
-        "investment_debate_state": {"bull_history": "", "bear_history": "", "history": "",
-                                    "current_response": "", "count": 0},
-        "risk_debate_state": {"history": "", "latest_speaker": "", "count": 0,
-                              "aggressive_history": "", "conservative_history": "", "neutral_history": "",
-                              "current_aggressive_response": "", "current_conservative_response": "",
-                              "current_neutral_response": ""},
+        "company_of_interest": "NVDA",
+        "trade_date": "2026-08-14",
+        "asset_type": "stock",
+        "instrument_context": "",
+        "portfolio_context": "",
+        "past_context": "",
+        "market_report": "RSI 61, price 178.",
+        "sentiment_report": "",
+        "news_report": "",
+        "fundamentals_report": "",
+        "investment_plan": "P",
+        "trader_investment_plan": "T",
+        "investment_debate_state": {
+            "bull_history": "",
+            "bear_history": "",
+            "history": "",
+            "current_response": "",
+            "count": 0,
+        },
+        "risk_debate_state": {
+            "history": "",
+            "latest_speaker": "",
+            "count": 0,
+            "aggressive_history": "",
+            "conservative_history": "",
+            "neutral_history": "",
+            "current_aggressive_response": "",
+            "current_conservative_response": "",
+            "current_neutral_response": "",
+        },
     }
     getattr(mod, factory)(_LLM())(state)
 

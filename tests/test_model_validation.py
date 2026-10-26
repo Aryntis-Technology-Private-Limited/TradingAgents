@@ -87,11 +87,14 @@ def test_every_provider_lets_you_name_your_own_model(provider, mode):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("provider, model", [
-    ("xai", "grok-4.20-0309-reasoning"),
-    ("deepseek", "deepseek-v4-flash"),
-    ("qwen", "qwen3.7-max"),
-])
+@pytest.mark.parametrize(
+    "provider, model",
+    [
+        ("xai", "grok-4.20-0309-reasoning"),
+        ("deepseek", "deepseek-v4-flash"),
+        ("qwen", "qwen3.7-max"),
+    ],
+)
 def test_a_retired_model_id_still_runs_without_a_warning(provider, model):
     """A config written against an earlier release keeps working: the provider
     still serves these, they are just no longer offered in the picker."""

@@ -92,24 +92,27 @@ def subreddits_for(ticker: str) -> tuple[str, ...]:
     coin = _COIN_SUBREDDITS.get(base)
     return ((coin,) if coin else ()) + CRYPTO_SUBREDDITS
 
+
 # Reddit's maximum page size. A week of posts for a ticker across the default
 # subreddits fits well inside one page, which keeps a high-volume subreddit from
 # crowding the others out of a combined search.
 _FEED_PAGE = 100
-_SCREEN_CHARS = 1000   # of a post's title and body sent for screening
+_SCREEN_CHARS = 1000  # of a post's title and body sent for screening
 
 
 _SEARCH_LOOKBACK = timedelta(days=7)  # matches t=week below
 
 
 def _search_qs(ticker: str, limit: int) -> str:
-    return urlencode({
-        "q": ticker,
-        "restrict_sr": "on",
-        "sort": "new",
-        "t": "week",  # last 7 days
-        "limit": limit,
-    })
+    return urlencode(
+        {
+            "q": ticker,
+            "restrict_sr": "on",
+            "sort": "new",
+            "t": "week",  # last 7 days
+            "limit": limit,
+        }
+    )
 
 
 def _iso_to_timestamp(iso_str: str | None) -> float | None:
@@ -213,7 +216,9 @@ def _fetch_subreddit_rss(
             wait = retry_after if retry_after is not None else _jitter(_RETRY_FALLBACK_SECONDS)
             logger.warning(
                 "Reddit RSS 429 for r/%s · %s — backing off %.1fs then retrying once",
-                sub, ticker, wait,
+                sub,
+                ticker,
+                wait,
             )
             time.sleep(wait)
             return _fetch_subreddit_rss(ticker, sub, limit, timeout, _retry=False)
@@ -231,17 +236,20 @@ def _fetch_subreddit_rss(
         published_el = entry.find("atom:published", _ATOM_NS)
         content_el = entry.find("atom:content", _ATOM_NS)
         category_el = entry.find("atom:category", _ATOM_NS)
-        posts.append({
-            "title": (title_el.text if title_el is not None else "") or "",
-            "created_utc": _iso_to_timestamp(
-                published_el.text if published_el is not None else None
-            ),
-            "selftext": _strip_html(content_el.text if content_el is not None else ""),
-            # A combined feed names each entry's subreddit; a single-subreddit
-            # feed may omit it, and then it can only be that one.
-            "subreddit": category_el.get("term") if category_el is not None
-            else (sub if "+" not in sub else ""),
-        })
+        posts.append(
+            {
+                "title": (title_el.text if title_el is not None else "") or "",
+                "created_utc": _iso_to_timestamp(
+                    published_el.text if published_el is not None else None
+                ),
+                "selftext": _strip_html(content_el.text if content_el is not None else ""),
+                # A combined feed names each entry's subreddit; a single-subreddit
+                # feed may omit it, and then it can only be that one.
+                "subreddit": category_el.get("term")
+                if category_el is not None
+                else (sub if "+" not in sub else ""),
+            }
+        )
     return posts
 
 
@@ -285,8 +293,11 @@ def fetch_reddit_posts(
     posts = _within_window(fetched, start_date, end_date)
     if not posts:
         gap = window and coverage_gap(
-            _coverage_dates(fetched), start_date, end_date,
-            "Reddit search", f"discussion of {ticker.upper()}",
+            _coverage_dates(fetched),
+            start_date,
+            end_date,
+            "Reddit search",
+            f"discussion of {ticker.upper()}",
         )
         period = f"within {start_date}..{end_date}" if window else "in the past 7 days"
         return gap or f"<no Reddit posts found mentioning {ticker.upper()} across {label} {period}>"
@@ -296,8 +307,9 @@ def fetch_reddit_posts(
 
     note, screened_out = "", set()
     if screen:
-        keep, note = screen([f"{p.get('title') or ''}\n{p.get('selftext') or ''}"[:_SCREEN_CHARS]
-                             for p in posts])
+        keep, note = screen(
+            [f"{p.get('title') or ''}\n{p.get('selftext') or ''}"[:_SCREEN_CHARS] for p in posts]
+        )
         screened_out = {sub_of(p).lower() for p, kept in zip(posts, keep, strict=True) if not kept}
         posts = [p for p, kept in zip(posts, keep, strict=True) if kept]
 
@@ -317,7 +329,8 @@ def fetch_reddit_posts(
             else:
                 blocks.append(
                     f"r/{sub}: <not among the newest {_FEED_PAGE} matches across {label}>"
-                    if page_full else f"r/{sub}: <no posts found mentioning {ticker.upper()}>"
+                    if page_full
+                    else f"r/{sub}: <no posts found mentioning {ticker.upper()}>"
                 )
             continue
         sub_posts = sub_posts[:limit_per_sub]  # the feed is newest-first

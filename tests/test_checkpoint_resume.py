@@ -157,9 +157,9 @@ class TestCheckpointSignature(unittest.TestCase):
         legacy = thread_id(self.ticker, self.date)
         sig_a = thread_id(self.ticker, self.date, "analysts=market,news|asset=stock")
         sig_b = thread_id(self.ticker, self.date, "analysts=market|asset=stock")
-        self.assertNotEqual(sig_a, sig_b)          # different graph shapes differ
-        self.assertNotEqual(legacy, sig_a)         # signature-keyed differs from legacy
-        self.assertEqual(                          # same inputs are stable
+        self.assertNotEqual(sig_a, sig_b)  # different graph shapes differ
+        self.assertNotEqual(legacy, sig_a)  # signature-keyed differs from legacy
+        self.assertEqual(  # same inputs are stable
             sig_a, thread_id(self.ticker, self.date, "analysts=market,news|asset=stock")
         )
 
@@ -167,7 +167,7 @@ class TestCheckpointSignature(unittest.TestCase):
         global _should_crash
         builder = _build_graph()
         sig1 = "analysts=market,news,fundamentals|asset=stock"
-        sig2 = "analysts=market|asset=stock"       # dropped analysts -> different graph
+        sig2 = "analysts=market|asset=stock"  # dropped analysts -> different graph
 
         _should_crash = True
         tid1 = thread_id(self.ticker, self.date, sig1)
@@ -197,22 +197,40 @@ class TestCheckpointSignature(unittest.TestCase):
 
         g = object.__new__(TradingAgentsGraph)
         g.selected_analysts = ("market", "news")
-        base_config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 1, "llm_provider": "openai",
-                       "quick_think_llm": "q", "deep_think_llm": "d", "output_language": "English",
-                       "data_vendors": {"core_stock_apis": "yfinance"}, "tool_vendors": {}}
+        base_config = {
+            "max_debate_rounds": 1,
+            "max_risk_discuss_rounds": 1,
+            "llm_provider": "openai",
+            "quick_think_llm": "q",
+            "deep_think_llm": "d",
+            "output_language": "English",
+            "data_vendors": {"core_stock_apis": "yfinance"},
+            "tool_vendors": {},
+        }
         g.config = dict(base_config)
         base = g._run_signature("stock")
-        for key, value in (("llm_provider", "google"), ("quick_think_llm", "q2"), ("deep_think_llm", "d2"),
-                           ("output_language", "Deutsch"),
-                           ("data_vendors", {"core_stock_apis": "alpha_vantage"}),
-                           ("tool_vendors", {"get_news": "alpha_vantage"}),
-                           ("backend_url", "http://other-endpoint/v1"), ("max_tool_rounds", 30),
-                           ("temperature", 0.2), ("openai_reasoning_effort", "high")):
+        for key, value in (
+            ("llm_provider", "google"),
+            ("quick_think_llm", "q2"),
+            ("deep_think_llm", "d2"),
+            ("output_language", "Deutsch"),
+            ("data_vendors", {"core_stock_apis": "alpha_vantage"}),
+            ("tool_vendors", {"get_news": "alpha_vantage"}),
+            ("backend_url", "http://other-endpoint/v1"),
+            ("max_tool_rounds", 30),
+            ("temperature", 0.2),
+            ("openai_reasoning_effort", "high"),
+        ):
             g.config = {**base_config, key: value}
             self.assertNotEqual(base, g._run_signature("stock"), key)
         # Where a run keeps its files, and how it retries, do not change what it writes.
-        for key, value in (("results_dir", "/elsewhere"), ("data_cache_dir", "/cache"),
-                           ("memory_log_path", "/log.md"), ("checkpoint_enabled", True), ("llm_max_retries", 9)):
+        for key, value in (
+            ("results_dir", "/elsewhere"),
+            ("data_cache_dir", "/cache"),
+            ("memory_log_path", "/log.md"),
+            ("checkpoint_enabled", True),
+            ("llm_max_retries", 9),
+        ):
             g.config = {**base_config, key: value}
             self.assertEqual(base, g._run_signature("stock"), key)
         g.config = dict(base_config)
@@ -227,14 +245,14 @@ class TestCheckpointSignature(unittest.TestCase):
         g.config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 1}
         base = g._run_signature("stock")
 
-        self.assertNotEqual(base, g._run_signature("crypto"))     # asset mode
+        self.assertNotEqual(base, g._run_signature("crypto"))  # asset mode
         g.selected_analysts = ("market",)
-        self.assertNotEqual(base, g._run_signature("stock"))      # analyst selection
+        self.assertNotEqual(base, g._run_signature("stock"))  # analyst selection
         g.selected_analysts = ("market", "news")
         g.config = {"max_debate_rounds": 3, "max_risk_discuss_rounds": 1}
-        self.assertNotEqual(base, g._run_signature("stock"))      # debate depth
+        self.assertNotEqual(base, g._run_signature("stock"))  # debate depth
         g.config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 5}
-        self.assertNotEqual(base, g._run_signature("stock"))      # risk depth
+        self.assertNotEqual(base, g._run_signature("stock"))  # risk depth
         # Stable for identical inputs.
         g.config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 1}
         self.assertEqual(base, g._run_signature("stock"))

@@ -6,6 +6,7 @@ fabricated the other side's position. All five debators (bull, bear, and the
 three risk analysts) now substitute an explicit opening marker when the opponent
 has not spoken, and pass a real argument through unchanged.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -20,9 +21,12 @@ from tradingagents.agents.risk_mgmt.conservative_debator import create_conservat
 from tradingagents.agents.risk_mgmt.neutral_debator import create_neutral_debator
 
 _REPORTS = {
-    "company_of_interest": "AAPL", "asset_type": "stock",
-    "market_report": "m", "sentiment_report": "s",
-    "news_report": "n", "fundamentals_report": "f",
+    "company_of_interest": "AAPL",
+    "asset_type": "stock",
+    "market_report": "m",
+    "sentiment_report": "s",
+    "news_report": "n",
+    "fundamentals_report": "f",
 }
 
 
@@ -39,23 +43,32 @@ def _investment_state(current_response):
         **_REPORTS,
         "count": 0,
         "investment_debate_state": {
-            "history": "", "bull_history": "", "bear_history": "",
-            "current_response": current_response, "count": 0,
+            "history": "",
+            "bull_history": "",
+            "bear_history": "",
+            "current_response": current_response,
+            "count": 0,
         },
     }
 
 
 def _risk_state(**responses):
     base = {
-        "current_aggressive_response": "", "current_conservative_response": "",
-        "current_neutral_response": "", "history": "", "aggressive_history": "",
-        "conservative_history": "", "neutral_history": "", "count": 0,
+        "current_aggressive_response": "",
+        "current_conservative_response": "",
+        "current_neutral_response": "",
+        "history": "",
+        "aggressive_history": "",
+        "conservative_history": "",
+        "neutral_history": "",
+        "count": 0,
     }
     base.update(responses)
     return {**_REPORTS, "trader_investment_plan": "plan", "risk_debate_state": base}
 
 
 # --- shared helper ----------------------------------------------------------
+
 
 @pytest.mark.unit
 def test_helper_marks_empty_and_passes_through():
@@ -64,6 +77,7 @@ def test_helper_marks_empty_and_passes_through():
 
 
 # --- researchers ------------------------------------------------------------
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
@@ -86,6 +100,7 @@ def test_researcher_passes_real_opponent_argument():
 
 
 # --- risk debators ----------------------------------------------------------
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize(

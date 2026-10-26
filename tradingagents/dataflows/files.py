@@ -75,7 +75,7 @@ def _hold_windows(handle, wait: bool = True) -> Iterator[bool]:
             break
         except OSError as exc:
             if not wait and exc.errno in (errno.EACCES, errno.EDEADLOCK):
-                yield False   # another writer holds it
+                yield False  # another writer holds it
                 return
             # LK_LOCK gives up after about ten seconds of another writer's hold;
             # any other failure is not a wait.

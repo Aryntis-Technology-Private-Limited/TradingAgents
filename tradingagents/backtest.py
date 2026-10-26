@@ -16,6 +16,8 @@ cell rather than a position carried forward.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -106,11 +108,16 @@ class BacktestSummary:
     holding: str = ""
 
     def render(self) -> str:
-        lines = [f"Resolved cells: {self.resolved} · pending: {self.pending}"
-                 + (f" · unscored: {self.unscored}" if self.unscored else "")]
+        lines = [
+            f"Resolved cells: {self.resolved} · pending: {self.pending}"
+            + (f" · unscored: {self.unscored}" if self.unscored else "")
+        ]
         for rating, score in self.by_rating.items():
-            called = (f"called the direction {score.hit_rate:.0%}"
-                      if score.hit_rate is not None else "no direction claimed")
+            called = (
+                f"called the direction {score.hit_rate:.0%}"
+                if score.hit_rate is not None
+                else "no direction claimed"
+            )
             lines.append(
                 f"- {rating}: n={score.count}, {called}, "
                 f"mean alpha {score.mean_alpha:+.2%} vs the benchmark"
@@ -148,12 +155,39 @@ def run_backtest(
     run_id = safe_ticker_component(run_id or datetime.now().strftime("%Y%m%d_%H%M%S"))
     run_dir = Path(config["results_dir"]) / "backtest" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    run_config = {**config, "results_dir": str(run_dir),
-                  "memory_log_path": str(run_dir / "trading_memory.md")}
+
+    # The resume key must capture the settings a cell ran under, not just its
+    # identity: an interrupted sweep resumed with different analysts, models,
+    # vendors or holding period would otherwise silently mix cells scored under
+    # different configurations into one summary.
+    run_key = hashlib.sha256(
+        json.dumps(
+            {
+                "analysts": sorted(selected_analysts),
+                "asset_type": asset_type,
+                "holding_days": config.get("holding_period_days"),
+                "data_vendors": config.get("data_vendors"),
+                "tool_vendors": config.get("tool_vendors"),
+            },
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    run_config = {
+        **config,
+        "results_dir": str(run_dir),
+        "memory_log_path": str(run_dir / "trading_memory.md"),
+        "backtest_run_key": run_key,
+    }
 
     graph = TradingAgentsGraph(selected_analysts, config=run_config)
     result = BacktestResult(run_id=run_id, log_path=Path(run_config["memory_log_path"]))
-    done = {(e["ticker"], e["date"]) for e in graph.memory_log.load_entries()}
+
+    done = {
+        (e["ticker"], e["date"])
+        for e in graph.memory_log.load_entries()
+        if e.get("run_key") == run_key
+    }
 
     # A ticker or date given twice is one cell, run and settled once.
     tickers, dates = list(dict.fromkeys(tickers)), list(dict.fromkeys(dates))
@@ -184,7 +218,7 @@ def run_backtest(
 def summarize(source: BacktestResult | str | Path) -> BacktestSummary:
     """Score the settled decisions of a backtest, or of a memory log at a path, by rating."""
     if isinstance(source, BacktestResult):
-        path = source.log_path      # a run whose cells all failed wrote no log: nothing to score
+        path = source.log_path  # a run whose cells all failed wrote no log: nothing to score
     elif Path(source).is_file():
         path = Path(source)
     else:
@@ -192,8 +226,9 @@ def summarize(source: BacktestResult | str | Path) -> BacktestSummary:
     entries = TradingMemoryLog({"memory_log_path": str(path)}).load_entries()
     # A decision with no readable rating has no direction, so it can neither
     # count for nor against the system; it is reported as unscored instead.
-    resolved = [(e, _alpha(e)) for e in entries
-                if not e["pending"] and e["rating"] != RATING_REVIEW]
+    resolved = [
+        (e, _alpha(e)) for e in entries if not e["pending"] and e["rating"] != RATING_REVIEW
+    ]
     resolved = [(e, a) for e, a in resolved if a is not None]
     by_rating: dict[str, RatingScore] = {}
     for rating in dict.fromkeys(e["rating"] for e, _ in resolved):
@@ -206,9 +241,15 @@ def summarize(source: BacktestResult | str | Path) -> BacktestSummary:
         )
     unscored = sum(1 for e in entries if e["rating"] == RATING_REVIEW)
     # Report the window the outcomes were actually measured over, from the log.
-    windows = {f"{e['holding'][:-1]} trading days" for e, _ in resolved
-               if (e.get("holding") or "").endswith("d")}
-    return BacktestSummary(resolved=len(resolved),
-                           pending=len(entries) - len(resolved) - unscored,
-                           by_rating=by_rating, unscored=unscored,
-                           holding=", ".join(sorted(windows)) or "the configured window")
+    windows = {
+        f"{e['holding'][:-1]} trading days"
+        for e, _ in resolved
+        if (e.get("holding") or "").endswith("d")
+    }
+    return BacktestSummary(
+        resolved=len(resolved),
+        pending=len(entries) - len(resolved) - unscored,
+        by_rating=by_rating,
+        unscored=unscored,
+        holding=", ".join(sorted(windows)) or "the configured window",
+    )

@@ -5,6 +5,7 @@ day's bar was final is not served that snapshot all day (#1150). Keying the file
 by symbol rather than by day keeps the cache from growing a file per symbol per
 day (#1330).
 """
+
 from __future__ import annotations
 
 import os
@@ -97,10 +98,17 @@ def test_load_ohlcv_reuses_fresh_same_day_cache(tmp_path, monkeypatch):
 def test_one_cache_file_per_symbol_across_days(tmp_path, monkeypatch):
     """A later day's download replaces the symbol's file instead of adding one (#1330)."""
     monkeypatch.setattr(ohlcv, "get_config", lambda: {"data_cache_dir": str(tmp_path)})
-    frame = pd.DataFrame({"Date": pd.to_datetime(["2026-07-16", "2026-07-17"]), "Close": [1.0, 2.0]})
+    frame = pd.DataFrame(
+        {"Date": pd.to_datetime(["2026-07-16", "2026-07-17"]), "Close": [1.0, 2.0]}
+    )
     downloads = []
-    monkeypatch.setattr(ohlcv.yf, "Ticker", lambda symbol: SimpleNamespace(
-        history=lambda *a, **k: downloads.append(1) or frame.set_index("Date")))
+    monkeypatch.setattr(
+        ohlcv.yf,
+        "Ticker",
+        lambda symbol: SimpleNamespace(
+            history=lambda *a, **k: downloads.append(1) or frame.set_index("Date")
+        ),
+    )
 
     for day in ("2026-07-18 10:00", "2026-07-19 10:00", "2026-07-20 10:00"):
         now = pd.Timestamp(day)

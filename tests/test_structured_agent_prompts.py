@@ -8,6 +8,7 @@ and the loss of typed output.
 These assert the constraint reaches the *rendered* prompt each agent actually
 sends, not merely that the constant is referenced in the module.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -25,9 +26,7 @@ from tradingagents.agents.trader.trader import create_trader
 def _capturing_llm(captured: dict, result):
     """LLM whose structured binding records the prompt it was handed."""
     structured = MagicMock()
-    structured.invoke.side_effect = lambda prompt: (
-        captured.__setitem__("prompt", prompt) or result
-    )
+    structured.invoke.side_effect = lambda prompt: captured.__setitem__("prompt", prompt) or result
     llm = MagicMock()
     llm.with_structured_output.return_value = structured
     return llm
@@ -49,11 +48,13 @@ def test_trader_prompt_states_constraint():
 
     captured = {}
     llm = _capturing_llm(captured, TraderProposal(action=TraderAction.BUY, reasoning="x"))
-    create_trader(llm)({
-        "company_of_interest": "NVDA",
-        "investment_plan": "**Recommendation**: Buy",
-        "market_report": "Current price $189.5; ATR 4.2.",
-    })
+    create_trader(llm)(
+        {
+            "company_of_interest": "NVDA",
+            "investment_plan": "**Recommendation**: Buy",
+            "market_report": "Current price $189.5; ATR 4.2.",
+        }
+    )
     assert NO_EXTERNAL_TOOLS in _prompt_text(captured["prompt"])
 
 
@@ -64,17 +65,20 @@ def test_research_manager_prompt_states_constraint():
     captured = {}
     llm = _capturing_llm(
         captured,
-        ResearchPlan(
-            recommendation=PortfolioRating.BUY, rationale="x", strategic_actions="y"
-        ),
+        ResearchPlan(recommendation=PortfolioRating.BUY, rationale="x", strategic_actions="y"),
     )
-    create_research_manager(llm)({
-        "company_of_interest": "NVDA",
-        "investment_debate_state": {
-            "history": "h", "bull_history": "b", "bear_history": "r",
-            "current_response": "", "count": 1,
-        },
-    })
+    create_research_manager(llm)(
+        {
+            "company_of_interest": "NVDA",
+            "investment_debate_state": {
+                "history": "h",
+                "bull_history": "b",
+                "bear_history": "r",
+                "current_response": "",
+                "count": 1,
+            },
+        }
+    )
     assert NO_EXTERNAL_TOOLS in _prompt_text(captured["prompt"])
 
 
@@ -92,17 +96,24 @@ def test_portfolio_manager_prompt_states_constraint():
         ),
     )
     risk = {
-        "history": "h", "aggressive_history": "a", "conservative_history": "c",
-        "neutral_history": "n", "current_aggressive_response": "",
-        "current_conservative_response": "", "current_neutral_response": "",
-        "latest_speaker": "Neutral", "count": 1,
+        "history": "h",
+        "aggressive_history": "a",
+        "conservative_history": "c",
+        "neutral_history": "n",
+        "current_aggressive_response": "",
+        "current_conservative_response": "",
+        "current_neutral_response": "",
+        "latest_speaker": "Neutral",
+        "count": 1,
     }
-    create_portfolio_manager(llm)({
-        "company_of_interest": "NVDA",
-        "risk_debate_state": risk,
-        "investment_plan": "plan",
-        "trader_investment_plan": "trader plan",
-    })
+    create_portfolio_manager(llm)(
+        {
+            "company_of_interest": "NVDA",
+            "risk_debate_state": risk,
+            "investment_plan": "plan",
+            "trader_investment_plan": "trader plan",
+        }
+    )
     assert NO_EXTERNAL_TOOLS in _prompt_text(captured["prompt"])
 
 
@@ -116,14 +127,23 @@ def test_sentiment_prompt_states_constraint(monkeypatch):
     monkeypatch.setattr(sentiment.get_news, "func", lambda *a, **k: "news", raising=False)
 
     captured = {}
-    llm = _capturing_llm(captured, SentimentReport(
-        overall_band=SentimentBand.BULLISH, overall_score=7.5,
-        confidence="high", narrative="n",
-    ))
-    sentiment.create_sentiment_analyst(llm)({
-        "company_of_interest": "NVDA", "trade_date": "2026-01-15",
-        "asset_type": "stock", "messages": [],
-    })
+    llm = _capturing_llm(
+        captured,
+        SentimentReport(
+            overall_band=SentimentBand.BULLISH,
+            overall_score=7.5,
+            confidence="high",
+            narrative="n",
+        ),
+    )
+    sentiment.create_sentiment_analyst(llm)(
+        {
+            "company_of_interest": "NVDA",
+            "trade_date": "2026-01-15",
+            "asset_type": "stock",
+            "messages": [],
+        }
+    )
     text = _prompt_text(captured["prompt"])
     assert NO_EXTERNAL_TOOLS in text
     # This agent binds no tools, so tool-range wording must not reappear.
@@ -136,6 +156,7 @@ def test_tool_using_analysts_keep_their_date_guidance():
     # tool date ranges (#836) — this fix is scoped to no-tool agents.
     import tradingagents.agents.analysts.market_analyst as market
     import tradingagents.agents.analysts.news_analyst as news
+
     for module in (market, news):
         assert "tool-call date ranges" in inspect.getsource(module)
 
@@ -156,13 +177,23 @@ def test_the_sentiment_prompt_names_the_subreddits_searched(monkeypatch):
     monkeypatch.setattr(sentiment, "fetch_reddit_posts", lambda *a, **k: "rd")
     monkeypatch.setattr(sentiment.get_news, "func", lambda *a, **k: "news", raising=False)
     captured = {}
-    llm = _capturing_llm(captured, SentimentReport(
-        overall_band=SentimentBand.NEUTRAL, overall_score=5.0, confidence="low", narrative="n",
-    ))
-    sentiment.create_sentiment_analyst(llm)({
-        "company_of_interest": "BTC-USD", "trade_date": "2026-01-15",
-        "asset_type": "crypto", "messages": [],
-    })
+    llm = _capturing_llm(
+        captured,
+        SentimentReport(
+            overall_band=SentimentBand.NEUTRAL,
+            overall_score=5.0,
+            confidence="low",
+            narrative="n",
+        ),
+    )
+    sentiment.create_sentiment_analyst(llm)(
+        {
+            "company_of_interest": "BTC-USD",
+            "trade_date": "2026-01-15",
+            "asset_type": "crypto",
+            "messages": [],
+        }
+    )
     text = _prompt_text(captured["prompt"])
     assert "r/Bitcoin, r/CryptoCurrency, r/CryptoMarkets" in text
     assert "wallstreetbets" not in text

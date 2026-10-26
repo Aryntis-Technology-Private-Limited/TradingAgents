@@ -27,6 +27,7 @@ def _raise(exc):
 
         def read(self_inner):
             raise exc
+
     return _Resp()
 
 
@@ -55,12 +56,12 @@ class TestStockTwitsCryptoSymbols:
             ("BTC-USD", "BTC.X"),
             ("eth-usd", "ETH.X"),
             ("SOL-USD", "SOL.X"),
-            ("BTCUSD", "BTC.X"),      # undashed broker form
-            ("BTC-USDT", "BTC.X"),    # stablecoin quote
+            ("BTCUSD", "BTC.X"),  # undashed broker form
+            ("BTC-USDT", "BTC.X"),  # stablecoin quote
             ("AMD", "AMD"),
-            ("BRK-B", "BRK-B"),       # dashed class share: untouched
-            ("GOLD", "GOLD"),         # real equity (aliases elsewhere): untouched here
-            ("XYZ-USD", "XYZ-USD"),   # unknown base: not treated as crypto
+            ("BRK-B", "BRK-B"),  # dashed class share: untouched
+            ("GOLD", "GOLD"),  # real equity (aliases elsewhere): untouched here
+            ("XYZ-USD", "XYZ-USD"),  # unknown base: not treated as crypto
         ],
     )
     def test_symbol_mapping(self, ticker, expected):
@@ -79,11 +80,17 @@ class TestStockTwitsCryptoSymbols:
 
 
 def _stream(*bodies):
-    payload = {"messages": [
-        {"body": b, "created_at": "2026-01-09T15:00:00Z", "user": {"username": "u"},
-         "entities": {"sentiment": {"basic": "Bullish"}}}
-        for b in bodies
-    ]}
+    payload = {
+        "messages": [
+            {
+                "body": b,
+                "created_at": "2026-01-09T15:00:00Z",
+                "user": {"username": "u"},
+                "entities": {"sentiment": {"basic": "Bullish"}},
+            }
+            for b in bodies
+        ]
+    }
 
     class _Resp:
         def __enter__(self):
@@ -94,6 +101,7 @@ def _stream(*bodies):
 
         def read(self):
             return json.dumps(payload).encode()
+
     return _Resp()
 
 

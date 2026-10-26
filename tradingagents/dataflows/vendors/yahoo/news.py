@@ -7,8 +7,8 @@ import yfinance as yf
 from dateutil.relativedelta import relativedelta
 
 from tradingagents.dataflows.config import get_config
-from tradingagents.dataflows.date_window import coverage_gap, in_window
-from tradingagents.dataflows.errors import VendorUnavailableError
+from tradingagents.dataflows.date_window import in_window
+from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableError
 from tradingagents.dataflows.symbols import normalize_symbol
 from tradingagents.dataflows.vendors.yahoo.common import yf_retry
 
@@ -65,7 +65,8 @@ def _search_news(canonical: str, limit: int) -> tuple[list, bool]:
     if search is None:  # Yahoo answered "not found": its search is down
         return [], False
     tagged = [
-        a for a in (search.news or [])
+        a
+        for a in (search.news or [])
         if canonical in (t.upper() for t in a.get("relatedTickers") or [])
     ]
     knows = any((q.get("symbol") or "").upper() == canonical for q in search.quotes or [])
@@ -92,10 +93,13 @@ def get_news_yfinance(
     """News about ``ticker`` published in the window, from Yahoo Finance.
 
     The symbol's quote feed comes first. When it is empty, Yahoo search serves
-    the articles tagged with the symbol; when it has none, or neither answers,
-    Yahoo news is unavailable, which is not an absence of news, and a configured
-    next vendor is tried. Search results are a sample, so finding none in the
-    window never reads as "no news".
+    the articles tagged with the symbol. When nothing lands in the window —
+    no coverage at all, or coverage that simply does not reach these dates —
+    the vendor says so with ``NoMarketDataError`` rather than a bare "no
+    news" string, so the router tries the next configured vendor (GDELT,
+    Alpha Vantage, ...) instead of treating one vendor's gap as the answer.
+    Search results are a sample, so finding none in the window is never
+    read as an absence of news.
     """
     article_limit = get_config()["news_article_limit"]
     # Query Yahoo with the canonical symbol, like every other yfinance path —
@@ -103,7 +107,6 @@ def get_news_yfinance(
     # returns no news. Keep the user's ticker in the report header.
     canonical = normalize_symbol(ticker)
     resolved = "" if canonical == ticker else f" (resolved to {canonical})"
-    subject = f"news for {ticker}{resolved}"
     feed = yf_retry(lambda: yf.Ticker(canonical).get_news(count=article_limit)) or []
     articles = [_extract_article_data(a) for a in feed]
     if not feed:
@@ -124,14 +127,15 @@ def get_news_yfinance(
         return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{_format_articles(in_range)}"
 
     if not feed:
-        return (f"<Yahoo Finance news unavailable for {start_date}..{end_date}: Yahoo search "
-                f"returns only a sample of recent articles about {canonical}, so this is not "
-                f"an absence of {subject}>")
-    gap = coverage_gap(
-        (a["pub_date"] for a in articles),
-        start_date, end_date, "Yahoo Finance news", subject,
-    )
-    return gap or f"No news found for {ticker}{resolved} between {start_date} and {end_date}"
+        # The quote feed is empty and search returned nothing tagged with the
+        # symbol — Yahoo has no news coverage for this instrument/window at
+        # all, so say "no data" (not "unavailable") and let the router try
+        # the next vendor in the chain (GDELT, Alpha Vantage, ...).
+        raise NoMarketDataError(ticker, canonical, "no Yahoo Finance news coverage")
+    # Yahoo answered but nothing fell inside the window: that is a coverage
+    # gap on this vendor, not an absence of news — the next vendor may still
+    # have it.
+    raise NoMarketDataError(ticker, canonical, "no Yahoo Finance news in window")
 
 
 def get_global_news_yfinance(
@@ -167,11 +171,15 @@ def get_global_news_yfinance(
     seen_titles = set()
 
     for query in search_queries:
-        found = yf_retry(lambda q=query: yf.Search(
-            query=q,
-            news_count=limit,
-            enable_fuzzy_query=True,
-        ).news)
+        found = yf_retry(
+            lambda q=query: (
+                yf.Search(
+                    query=q,
+                    news_count=limit,
+                    enable_fuzzy_query=True,
+                ).news
+            )
+        )
 
         for article in found or []:
             # Window first: the limit counts what the run may read, so an
@@ -191,11 +199,9 @@ def get_global_news_yfinance(
     news_str = _format_articles(in_window_news[:limit])
 
     # Nothing fell inside the window -> say so rather than return an
-    # empty-bodied report (#993).
+    # empty-bodied report (#993). It is a coverage gap on this vendor,
+    # not an absence of news, so the router tries the next one.
     if not news_str:
-        # Results merge several fuzzy searches, so their timestamps prove no
-        # continuous coverage; judge the window against the present only.
-        gap = coverage_gap((), start_date, as_of_date, "Yahoo Finance global news", "market news")
-        return gap or f"No global news found between {start_date} and {as_of_date}"
+        raise NoMarketDataError("", "", "no Yahoo Finance global news in window")
 
     return f"## Global Market News, from {start_date} to {as_of_date}:\n\n{news_str}"

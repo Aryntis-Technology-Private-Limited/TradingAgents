@@ -1,4 +1,3 @@
-
 from typing import Any
 
 from .base_client import BaseLLMClient
@@ -35,21 +34,26 @@ def create_llm_client(
     # through the provider registry (single source of truth).
     if provider_lower == "anthropic":
         from .anthropic_client import AnthropicClient
+
         return AnthropicClient(model, base_url, **kwargs)
 
     if provider_lower == "google":
         from .google_client import GoogleClient
+
         return GoogleClient(model, base_url, **kwargs)
 
     if provider_lower == "azure":
         from .azure_client import AzureOpenAIClient
+
         return AzureOpenAIClient(model, base_url, **kwargs)
 
     if provider_lower == "bedrock":
         from .bedrock_client import BedrockClient
+
         return BedrockClient(model, base_url, **kwargs)
 
     from .openai_client import OpenAIClient, is_openai_compatible
+
     if is_openai_compatible(provider_lower):
         return OpenAIClient(model, base_url, provider=provider_lower, **kwargs)
 
@@ -152,5 +156,6 @@ def create_tier_client(config: dict, tier: str, **extra) -> BaseLLMClient:
     else:
         base_url = config.get(f"{tier}_think_backend_url")
     kwargs = build_llm_kwargs({**config, "llm_provider": provider})
-    return create_llm_client(provider=provider, model=config[f"{tier}_think_llm"], base_url=base_url,
-                             **kwargs, **extra)
+    return create_llm_client(
+        provider=provider, model=config[f"{tier}_think_llm"], base_url=base_url, **kwargs, **extra
+    )

@@ -51,4 +51,3 @@ def get_income_statement(ticker: str, freq: str = "quarterly", as_of_date: str =
     if withheld:
         return withheld
     return _make_api_request("INCOME_STATEMENT", {"symbol": ticker})
-

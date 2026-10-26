@@ -44,6 +44,7 @@ services:
     env_file:
       - ../../.env
     environment:
+      - TZ=Asia/Kolkata
       - TRADINGAGENTS_IN_DOCKER=1
       - TRADINGAGENTS_RESULTS_DIR=/home/appuser/.tradingagents/logs
       # The DAILY_REPORT_* keys are set in .env (per the design above); the
@@ -54,6 +55,8 @@ services:
       # mount of a host dir with matching ownership.
     volumes:
       - daily_reports:/home/appuser/.tradingagents
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/zoneinfo:/etc/zoneinfo:ro
       # Reports folder on the host (per user request 2026-10-24: reports live
       # at /root/user/reports, read directly on the box without a volume
       # lookup). The host source is /root/user/reports; it is bound at a path

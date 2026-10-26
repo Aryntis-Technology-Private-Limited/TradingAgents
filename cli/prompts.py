@@ -28,11 +28,13 @@ CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
 
 
 # The style of every selection menu.
-_MENU_STYLE = questionary.Style([
-    ("selected", "fg:magenta noinherit"),
-    ("highlighted", "fg:magenta noinherit"),
-    ("pointer", "fg:magenta noinherit"),
-])
+_MENU_STYLE = questionary.Style(
+    [
+        ("selected", "fg:magenta noinherit"),
+        ("highlighted", "fg:magenta noinherit"),
+        ("pointer", "fg:magenta noinherit"),
+    ]
+)
 
 
 def is_valid_ticker_input(value: str) -> bool:
@@ -95,7 +97,11 @@ def parse_analysis_date(value: str) -> str:
 def parse_analysts(value: str, asset_type: AssetType) -> list[AnalystType]:
     """Comma-separated analyst names, in the canonical order, checked against the asset."""
     # "sentiment" is the name users see; the analyst's key is "social".
-    names = [{"sentiment": "social"}.get(n, n) for n in (n.strip().lower() for n in value.split(",")) if n]
+    names = [
+        {"sentiment": "social"}.get(n, n)
+        for n in (n.strip().lower() for n in value.split(","))
+        if n
+    ]
     if not names:
         raise ValueError("name at least one analyst")
     known = {a.value: a for a in AnalystType}
@@ -140,11 +146,7 @@ def filter_analysts_for_asset_type(
 ) -> list[AnalystType]:
     if asset_type != AssetType.CRYPTO:
         return analysts
-    return [
-        analyst
-        for analyst in analysts
-        if analyst != AnalystType.FUNDAMENTALS
-    ]
+    return [analyst for analyst in analysts if analyst != AnalystType.FUNDAMENTALS]
 
 
 def _matching_choice(options, default):
@@ -198,9 +200,7 @@ def select_research_depth(default=None) -> int:
 
     choice = questionary.select(
         "Select Your [Research Depth]:",
-        choices=[
-            questionary.Choice(display, value=value) for display, value in DEPTH_OPTIONS
-        ],
+        choices=[questionary.Choice(display, value=value) for display, value in DEPTH_OPTIONS],
         default=_matching_choice(DEPTH_OPTIONS, default),
         instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
         style=questionary.Style(
@@ -227,14 +227,24 @@ def select_research_depth(default=None) -> int:
 # shortlist. Provider names are stable (unlike model IDs), so this rarely needs
 # touching; anything not here is still reachable via Custom ID.
 _OPENROUTER_MAINSTREAM = {
-    "openai", "anthropic", "google", "deepseek", "qwen", "mistralai",
-    "meta-llama", "x-ai", "z-ai", "minimax", "moonshotai",
+    "openai",
+    "anthropic",
+    "google",
+    "deepseek",
+    "qwen",
+    "mistralai",
+    "meta-llama",
+    "x-ai",
+    "z-ai",
+    "minimax",
+    "moonshotai",
 }
 
 
 def _fetch_openrouter_models() -> list[tuple[str, str]]:
     """Fetch available models from the OpenRouter API."""
     import requests
+
     try:
         resp = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
         resp.raise_for_status()
@@ -252,13 +262,20 @@ def _fetch_openrouter_models() -> list[tuple[str, str]]:
 def select_chatgpt_model(mode: str, default=None) -> str:
     """Select one of the ChatGPT plan's models, or enter a model ID."""
     from tradingagents.llm_clients import chatgpt_auth
+
     try:
         models = chatgpt_auth.list_models()
     except Exception as e:
-        console.print(f"\n[yellow]Could not list your ChatGPT plan's models: {escape(str(e))}[/yellow]")
+        console.print(
+            f"\n[yellow]Could not list your ChatGPT plan's models: {escape(str(e))}[/yellow]"
+        )
         models = []
-    return _select_listed_model(f"Select Your [{mode.title()}-Thinking] ChatGPT Plan Model:",
-                                models, default, _prompt_custom_model_id)
+    return _select_listed_model(
+        f"Select Your [{mode.title()}-Thinking] ChatGPT Plan Model:",
+        models,
+        default,
+        _prompt_custom_model_id,
+    )
 
 
 def _select_listed_model(title: str, models, default, custom) -> str:
@@ -305,15 +322,21 @@ def select_openrouter_model(mode: str, default=None) -> str:
     # Prefer the newest from mainstream providers so the shortlist isn't crowded
     # out by niche/experimental releases; fall back to all if none match.
     mainstream = [
-        (name, mid) for name, mid in models
+        (name, mid)
+        for name, mid in models
         if not mid.startswith("~")  # skip variant/alias duplicate routes
         and mid.split("/", 1)[0] in _OPENROUTER_MAINSTREAM
     ]
     top = (mainstream or models)[:5]
     return _select_listed_model(
-        f"Select Your [{mode.title()}-Thinking] OpenRouter Model (latest available):", top, default,
-        lambda: _require_text("Enter OpenRouter model ID (e.g. google/gemma-4-26b-a4b-it):",
-                              "Please enter a model ID."))
+        f"Select Your [{mode.title()}-Thinking] OpenRouter Model (latest available):",
+        top,
+        default,
+        lambda: _require_text(
+            "Enter OpenRouter model ID (e.g. google/gemma-4-26b-a4b-it):",
+            "Please enter a model ID.",
+        ),
+    )
 
 
 # Providers whose models are listed live, with the menu that offers them.
@@ -430,8 +453,10 @@ def prompt_openai_compatible_url(default=None) -> str:
         "Enter the OpenAI-compatible base URL "
         "(e.g. http://localhost:8000/v1 for vLLM, http://localhost:1234/v1 for LM Studio):",
         default=default or "",
-        validate=lambda x: x.strip().startswith(("http://", "https://"))
-        or "Enter a URL starting with http:// or https://",
+        validate=lambda x: (
+            x.strip().startswith(("http://", "https://"))
+            or "Enter a URL starting with http:// or https://"
+        ),
     ).ask()
     if not url:
         console.print("\n[red]No endpoint URL provided. Exiting...[/red]")
@@ -455,9 +480,13 @@ def select_llm_provider(default=None) -> tuple[str, str | None]:
             continue
         choices.append(questionary.Choice(display, value=(provider_key, url)))
         if provider_key == "anthropic":
-            choices.append(questionary.Choice("Subscription (use your ChatGPT plan)", value=_SUBSCRIPTION))
-    preselected = _SUBSCRIPTION if base in SIGNED_IN_PROVIDERS else next(
-        ((key, url) for _, key, url in PROVIDERS if key == base), None
+            choices.append(
+                questionary.Choice("Subscription (use your ChatGPT plan)", value=_SUBSCRIPTION)
+            )
+    preselected = (
+        _SUBSCRIPTION
+        if base in SIGNED_IN_PROVIDERS
+        else next(((key, url) for _, key, url in PROVIDERS if key == base), None)
     )
 
     choice = questionary.select(
@@ -475,8 +504,11 @@ def select_llm_provider(default=None) -> tuple[str, str | None]:
     if choice == _SUBSCRIPTION:
         choice = questionary.select(
             "Select your subscription:",
-            choices=[questionary.Choice(display, value=(key, url))
-                     for display, key, url in PROVIDERS if key in SIGNED_IN_PROVIDERS],
+            choices=[
+                questionary.Choice(display, value=(key, url))
+                for display, key, url in PROVIDERS
+                if key in SIGNED_IN_PROVIDERS
+            ],
             style=_MENU_STYLE,
         ).ask()
         if choice is None:
@@ -497,11 +529,13 @@ def ask_openai_reasoning_effort() -> str:
     return questionary.select(
         "Select Reasoning Effort:",
         choices=choices,
-        style=questionary.Style([
-            ("selected", "fg:cyan noinherit"),
-            ("highlighted", "fg:cyan noinherit"),
-            ("pointer", "fg:cyan noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:cyan noinherit"),
+                ("highlighted", "fg:cyan noinherit"),
+                ("pointer", "fg:cyan noinherit"),
+            ]
+        ),
     ).ask()
 
 
@@ -515,15 +549,17 @@ def ask_anthropic_effort() -> str | None:
     return questionary.select(
         "Select Effort Level:",
         choices=[
-        questionary.Choice("High (recommended)", "high"),
-        questionary.Choice("Medium (balanced)", "medium"),
-        questionary.Choice("Low (faster, cheaper)", "low"),
+            questionary.Choice("High (recommended)", "high"),
+            questionary.Choice("Medium (balanced)", "medium"),
+            questionary.Choice("Low (faster, cheaper)", "low"),
         ],
-        style=questionary.Style([
-            ("selected", "fg:cyan noinherit"),
-            ("highlighted", "fg:cyan noinherit"),
-            ("pointer", "fg:cyan noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:cyan noinherit"),
+                ("highlighted", "fg:cyan noinherit"),
+                ("pointer", "fg:cyan noinherit"),
+            ]
+        ),
     ).ask()
 
 
@@ -536,14 +572,16 @@ def ask_gemini_thinking_config() -> str | None:
     return questionary.select(
         "Select Thinking Mode:",
         choices=[
-        questionary.Choice("Enable Thinking (recommended)", "high"),
-        questionary.Choice("Minimal/Disable Thinking", "minimal"),
+            questionary.Choice("Enable Thinking (recommended)", "high"),
+            questionary.Choice("Minimal/Disable Thinking", "minimal"),
         ],
-        style=questionary.Style([
-            ("selected", "fg:green noinherit"),
-            ("highlighted", "fg:green noinherit"),
-            ("pointer", "fg:green noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:green noinherit"),
+                ("highlighted", "fg:green noinherit"),
+                ("pointer", "fg:green noinherit"),
+            ]
+        ),
     ).ask()
 
 
@@ -565,11 +603,13 @@ def ask_glm_region() -> tuple[str, str]:
                 value=("glm-cn", "https://open.bigmodel.cn/api/paas/v4/"),
             ),
         ],
-        style=questionary.Style([
-            ("selected", "fg:cyan noinherit"),
-            ("highlighted", "fg:cyan noinherit"),
-            ("pointer", "fg:cyan noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:cyan noinherit"),
+                ("highlighted", "fg:cyan noinherit"),
+                ("pointer", "fg:cyan noinherit"),
+            ]
+        ),
     ).ask()
 
 
@@ -592,11 +632,13 @@ def ask_qwen_region() -> tuple[str, str]:
                 value=("qwen-cn", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             ),
         ],
-        style=questionary.Style([
-            ("selected", "fg:cyan noinherit"),
-            ("highlighted", "fg:cyan noinherit"),
-            ("pointer", "fg:cyan noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:cyan noinherit"),
+                ("highlighted", "fg:cyan noinherit"),
+                ("pointer", "fg:cyan noinherit"),
+            ]
+        ),
     ).ask()
 
 
@@ -619,11 +661,13 @@ def ask_minimax_region() -> tuple[str, str]:
                 value=("minimax-cn", "https://api.minimaxi.com/v1"),
             ),
         ],
-        style=questionary.Style([
-            ("selected", "fg:cyan noinherit"),
-            ("highlighted", "fg:cyan noinherit"),
-            ("pointer", "fg:cyan noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:cyan noinherit"),
+                ("highlighted", "fg:cyan noinherit"),
+                ("pointer", "fg:cyan noinherit"),
+            ]
+        ),
     ).ask()
 
 
@@ -680,7 +724,9 @@ def ensure_signed_in(provider: str) -> None:
         login = [sys.executable, "-P", "-m", "cli.main", "login", "chatgpt"]
         if subprocess.run(login).returncode != 0:
             raise typer.Exit(code=1) from None
-    console.print(f"[green]✓ Using your ChatGPT plan:[/green] {escape(chatgpt_auth.signed_in_as() or '')}")
+    console.print(
+        f"[green]✓ Using your ChatGPT plan:[/green] {escape(chatgpt_auth.signed_in_as() or '')}"
+    )
 
 
 def ensure_api_key(provider: str) -> str | None:
@@ -712,20 +758,18 @@ def ensure_api_key(provider: str) -> str | None:
         console.print(f"[red]{env_var} is not set; there is no terminal to ask for it.[/red]")
         raise typer.Exit(code=1)
 
-    console.print(
-        f"\n[yellow]{env_var} is not set in your environment.[/yellow]"
-    )
+    console.print(f"\n[yellow]{env_var} is not set in your environment.[/yellow]")
     key = questionary.password(
         f"Paste your {env_var} (will be saved to .env):",
-        style=questionary.Style([
-            ("text", "fg:cyan"),
-            ("highlighted", "noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("text", "fg:cyan"),
+                ("highlighted", "noinherit"),
+            ]
+        ),
     ).ask()
     if not key:
-        console.print(
-            f"[red]Skipped. API calls will fail until {env_var} is set.[/red]"
-        )
+        console.print(f"[red]Skipped. API calls will fail until {env_var} is set.[/red]")
         return None
 
     env_path = find_dotenv(usecwd=True) or str(Path.cwd() / ".env")
@@ -764,11 +808,13 @@ def ask_output_language(default=None) -> str:
         "Select Output Language:",
         choices=choices,
         default=_matching_choice([(c.title, c.value) for c in choices], default),
-        style=questionary.Style([
-            ("selected", "fg:yellow noinherit"),
-            ("highlighted", "fg:yellow noinherit"),
-            ("pointer", "fg:yellow noinherit"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:yellow noinherit"),
+                ("highlighted", "fg:yellow noinherit"),
+                ("pointer", "fg:yellow noinherit"),
+            ]
+        ),
     ).ask()
 
     # Output language has a sensible default, so a cancel falls back to English
@@ -776,9 +822,12 @@ def ask_output_language(default=None) -> str:
     if choice is None:
         return "English"
     if choice == "custom":
-        return (questionary.text(
-            "Enter language name (e.g. Turkish, Vietnamese, Thai, Indonesian):",
-            validate=lambda x: len(x.strip()) > 0 or "Please enter a language name.",
-        ).ask() or "").strip() or "English"
+        return (
+            questionary.text(
+                "Enter language name (e.g. Turkish, Vietnamese, Thai, Indonesian):",
+                validate=lambda x: len(x.strip()) > 0 or "Please enter a language name.",
+            ).ask()
+            or ""
+        ).strip() or "English"
 
     return choice

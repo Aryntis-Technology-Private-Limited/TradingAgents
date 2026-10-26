@@ -14,8 +14,9 @@ class TradingMemoryLog:
     # HTML comment: cannot appear in LLM prose output, safe as a hard delimiter
     _SEPARATOR = "\n\n<!-- ENTRY_END -->\n\n"
     # Precompiled patterns — avoids re-compilation on every load_entries() call
-    _DECISION_RE = re.compile(r"DECISION:\n(.*?)(?=\nREFLECTION:|\Z)", re.DOTALL)
+    _DECISION_RE = re.compile(r"DECISION:\n(.*?)(?=\nRUN_KEY:|\nREFLECTION:|\Z)", re.DOTALL)
     _REFLECTION_RE = re.compile(r"REFLECTION:\n(.*?)$", re.DOTALL)
+    _RUN_KEY_RE = re.compile(r"^RUN_KEY:\s*(\S+)\s*$", re.MULTILINE)
 
     def __init__(self, config: dict = None):
         cfg = config or {}
@@ -35,11 +36,15 @@ class TradingMemoryLog:
         trade_date: str,
         final_trade_decision: str,
         rating: str | None = None,
+        run_key: str | None = None,
     ) -> None:
         """Append pending entry at end of propagate(). No LLM call.
 
         ``rating`` is the decision's own rating when the caller has it; without
-        one it is read from the decision text.
+        one it is read from the decision text. ``run_key`` fingerprints the
+        settings the decision ran under (analysts, models, vendors, holding
+        period), so a resumed backtest with different settings does not
+        silently reuse cells scored under the old ones.
         """
         if not self._log_path:
             return
@@ -55,7 +60,12 @@ class TradingMemoryLog:
                         return
             rating = rating or parse_rating(final_trade_decision)
             tag = f"[{trade_date} | {ticker} | {rating} | pending]"
-            entry = f"{tag}\n\nDECISION:\n{final_trade_decision}{self._SEPARATOR}"
+            # The fingerprint sits between the tag and the decision so it
+            # survives a settlement rewrite (which replaces the tag and
+            # appends the tail) without being swallowed into the parsed
+            # decision text.
+            key_line = f"RUN_KEY: {run_key}\n" if run_key else ""
+            entry = f"{tag}\n{key_line}\nDECISION:\n{final_trade_decision}{self._SEPARATOR}"
             with open(self._log_path, "a", encoding="utf-8") as f:
                 f.write(entry)
 
@@ -180,12 +190,17 @@ class TradingMemoryLog:
                     fields = [f.strip() for f in tag_line[1:-1].split("|")]
                     rating = fields[2]
                     new_tag = self._resolved_tag(
-                        trade_date, ticker, rating, raw_pct, alpha_pct, holding_days, resolution_date
+                        trade_date,
+                        ticker,
+                        rating,
+                        raw_pct,
+                        alpha_pct,
+                        holding_days,
+                        resolution_date,
                     )
                     rest = "\n".join(lines[1:])
-                    new_blocks.append(
-                        f"{new_tag}\n\n{rest.lstrip()}\n\nREFLECTION:\n{reflection}"
-                    )
+                    key_line, body = self._pull_run_key(rest)
+                    new_blocks.append(f"{new_tag}\n{key_line}\n{body.lstrip()}\n\nREFLECTION:\n{reflection}")
                     updated = True
                 else:
                     new_blocks.append(block)
@@ -233,12 +248,18 @@ class TradingMemoryLog:
                         raw_pct = f"{upd['raw_return']:+.1%}"
                         alpha_pct = f"{upd['alpha_return']:+.1%}"
                         new_tag = self._resolved_tag(
-                            trade_date, ticker, rating, raw_pct, alpha_pct,
-                            upd["holding_days"], upd.get("resolution_date"),
+                            trade_date,
+                            ticker,
+                            rating,
+                            raw_pct,
+                            alpha_pct,
+                            upd["holding_days"],
+                            upd.get("resolution_date"),
                         )
                         rest = "\n".join(lines[1:])
+                        key_line, body = self._pull_run_key(rest)
                         new_blocks.append(
-                            f"{new_tag}\n\n{rest.lstrip()}\n\nREFLECTION:\n{upd['reflection']}"
+                            f"{new_tag}\n{key_line}\n{body.lstrip()}\n\nREFLECTION:\n{upd['reflection']}"
                         )
                         del update_map[(trade_date, ticker)]
                         matched = True
@@ -254,6 +275,24 @@ class TradingMemoryLog:
             tmp_path.replace(self._log_path)
 
     # --- Helpers ---
+
+    @staticmethod
+    def _pull_run_key(body: str) -> tuple[str, str]:
+        """Split an entry body into (the ``RUN_KEY`` line, the rest).
+
+        Settling rewrites an entry's tag, and the settings fingerprint lives
+        in the body rather than the tag: the tag's field positions are parsed
+        elsewhere, and a new field there would break readers of older logs.
+        The line must survive the rewrite — a settled cell that loses its
+        fingerprint would be re-run by a resumed backtest — and it must stay
+        above the decision text, since everything after ``DECISION:`` is read
+        as the decision.
+        """
+        lines = body.splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith("RUN_KEY:"):
+                return f"{line.strip()}\n", "\n".join(lines[i + 1 :])
+        return "", body
 
     @staticmethod
     def _resolved_tag(
@@ -322,7 +361,7 @@ class TradingMemoryLog:
         resolved = None
         for f in fields[6:]:
             if f.startswith("resolved:"):
-                resolved = f[len("resolved:"):].strip()
+                resolved = f[len("resolved:") :].strip()
         entry = {
             "date": fields[0],
             "ticker": fields[1],
@@ -332,8 +371,12 @@ class TradingMemoryLog:
             "alpha": fields[4] if len(fields) > 4 else None,
             "holding": fields[5] if len(fields) > 5 else None,
             "resolved": resolved,
+            "run_key": None,
         }
         body = "\n".join(lines[1:]).strip()
+        run_key_match = self._RUN_KEY_RE.search(body)
+        if run_key_match:
+            entry["run_key"] = run_key_match.group(1)
         decision_match = self._DECISION_RE.search(body)
         reflection_match = self._REFLECTION_RE.search(body)
         entry["decision"] = decision_match.group(1).strip() if decision_match else ""

@@ -28,8 +28,13 @@ from tradingagents.llm_clients.model_catalog import get_model_options
 _PREFS_PATH = Path(os.path.expanduser("~")) / ".tradingagents" / "cli_prefs.json"
 
 REMEMBERED = (
-    "output_language", "analysts", "research_depth", "llm_provider",
-    "quick_think_llm", "deep_think_llm", "backend_url",
+    "output_language",
+    "analysts",
+    "research_depth",
+    "llm_provider",
+    "quick_think_llm",
+    "deep_think_llm",
+    "backend_url",
 )
 
 
@@ -54,7 +59,10 @@ def save_last_run(selections: dict) -> None:
     try:
         _PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
         # A concurrent run reads one file or the other.
-        replace_file(_PREFS_PATH, lambda temp: Path(temp).write_text(json.dumps(kept, indent=2), encoding="utf-8"))
+        replace_file(
+            _PREFS_PATH,
+            lambda temp: Path(temp).write_text(json.dumps(kept, indent=2), encoding="utf-8"),
+        )
     except OSError:
         return
 
@@ -69,7 +77,9 @@ def sanitize(prefs: dict, asset_type) -> dict:
 
     known = {a.value for a in AnalystType}
     analysts = [a for a in prefs.get("analysts") or [] if a in known]
-    allowed = filter_analysts_for_asset_type([AnalystType(a) for a in analysts], AssetType(asset_type))
+    allowed = filter_analysts_for_asset_type(
+        [AnalystType(a) for a in analysts], AssetType(asset_type)
+    )
     if allowed:
         kept["analysts"] = [a.value for a in allowed]
 

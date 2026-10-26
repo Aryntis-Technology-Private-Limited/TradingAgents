@@ -7,6 +7,7 @@ lifecycle is now ``begin_checkpoint`` / ``end_checkpoint`` /
 tests drive that lifecycle exactly as the CLI does (begin -> stream self.graph ->
 clear/end) and prove state is saved and resumed.
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -48,8 +49,10 @@ def _workflow() -> StateGraph:
 def _bare_graph(tmpdir, *, enabled=True):
     g = object.__new__(TradingAgentsGraph)
     g.config = {
-        "checkpoint_enabled": enabled, "data_cache_dir": tmpdir,
-        "max_debate_rounds": 1, "max_risk_discuss_rounds": 1,
+        "checkpoint_enabled": enabled,
+        "data_cache_dir": tmpdir,
+        "max_debate_rounds": 1,
+        "max_risk_discuss_rounds": 1,
     }
     g.selected_analysts = ("market",)
     g.workflow = _workflow()

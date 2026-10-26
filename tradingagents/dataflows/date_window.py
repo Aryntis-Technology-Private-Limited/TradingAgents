@@ -41,9 +41,7 @@ def is_historical(run_date) -> bool:
     return bool(run_date) and str(run_date) < get_current_date()
 
 
-def coverage_gap(
-    dates, start_date: str, end_date: str, source: str, subject: str
-) -> str | None:
+def coverage_gap(dates, start_date: str, end_date: str, source: str, subject: str) -> str | None:
     """Placeholder for a window a feed did not fully observe, else None.
 
     Yahoo news and the Reddit and StockTwits feeds return their latest items

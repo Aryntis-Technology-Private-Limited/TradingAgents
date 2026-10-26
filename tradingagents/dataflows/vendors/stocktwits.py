@@ -110,12 +110,14 @@ def fetch_stocktwits_messages(
     if not messages:
         if start_date and end_date:
             gap = coverage_gap(
-                (_created_at(m) for m in fetched), start_date, end_date,
-                "StockTwits", f"messages about ${ticker.upper()}",
+                (_created_at(m) for m in fetched),
+                start_date,
+                end_date,
+                "StockTwits",
+                f"messages about ${ticker.upper()}",
             )
             return gap or (
-                f"<no StockTwits messages for ${ticker.upper()} within "
-                f"{start_date}..{end_date}>"
+                f"<no StockTwits messages for ${ticker.upper()} within {start_date}..{end_date}>"
             )
         return f"<no StockTwits messages found for ${ticker.upper()}>"
 
@@ -125,7 +127,9 @@ def fetch_stocktwits_messages(
         screened = len(messages)
         messages = [m for m, kept in zip(messages, keep, strict=True) if kept]
         if not messages:
-            return f"{note}\n\n<none of the {screened} StockTwits messages is about ${ticker.upper()}>"
+            return (
+                f"{note}\n\n<none of the {screened} StockTwits messages is about ${ticker.upper()}>"
+            )
 
     lines = []
     bullish = bearish = unlabeled = 0

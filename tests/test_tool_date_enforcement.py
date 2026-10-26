@@ -22,13 +22,16 @@ TRADE_DATE = "2026-08-14"
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("requested, expected", [
-    ("2026-09-14", TRADE_DATE),     # later than the run: clamped
-    ("2026-08-01", "2026-08-01"),   # earlier: narrows, allowed
-    (None, TRADE_DATE),             # omitted
-    ("Sept 1", TRADE_DATE),         # unparseable
-    ("", TRADE_DATE),
-])
+@pytest.mark.parametrize(
+    "requested, expected",
+    [
+        ("2026-09-14", TRADE_DATE),  # later than the run: clamped
+        ("2026-08-01", "2026-08-01"),  # earlier: narrows, allowed
+        (None, TRADE_DATE),  # omitted
+        ("Sept 1", TRADE_DATE),  # unparseable
+        ("", TRADE_DATE),
+    ],
+)
 def test_as_of_takes_the_earlier_date(requested, expected):
     assert as_of(requested, TRADE_DATE) == expected
 
@@ -39,11 +42,18 @@ def test_as_of_without_a_trade_date_passes_the_request_through():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("start, end, expected", [
-    ("2026-08-01", "2026-09-14", ("2026-08-01", TRADE_DATE)),  # end clamped
-    ("2026-08-01", "2026-08-10", ("2026-08-01", "2026-08-10")),  # inside: unchanged
-    ("2026-09-01", "2026-09-08", ("2026-08-07", TRADE_DATE)),  # wholly later: span kept, moved back
-])
+@pytest.mark.parametrize(
+    "start, end, expected",
+    [
+        ("2026-08-01", "2026-09-14", ("2026-08-01", TRADE_DATE)),  # end clamped
+        ("2026-08-01", "2026-08-10", ("2026-08-01", "2026-08-10")),  # inside: unchanged
+        (
+            "2026-09-01",
+            "2026-09-08",
+            ("2026-08-07", TRADE_DATE),
+        ),  # wholly later: span kept, moved back
+    ],
+)
 def test_as_of_window(start, end, expected):
     assert as_of_window(start, end, TRADE_DATE) == expected
 
@@ -69,9 +79,15 @@ def test_trade_date_is_hidden_from_the_model(tool):
 
 
 INSTRUMENT_TOOLS = [
-    tools.get_stock_data, tools.get_indicators, tools.get_verified_market_snapshot,
-    tools.get_fundamentals, tools.get_balance_sheet, tools.get_cashflow,
-    tools.get_income_statement, tools.get_news, tools.get_insider_transactions,
+    tools.get_stock_data,
+    tools.get_indicators,
+    tools.get_verified_market_snapshot,
+    tools.get_fundamentals,
+    tools.get_balance_sheet,
+    tools.get_cashflow,
+    tools.get_income_statement,
+    tools.get_news,
+    tools.get_insider_transactions,
 ]
 
 
@@ -86,7 +102,9 @@ def test_the_instrument_is_hidden_from_the_model(tool):
 
 @pytest.mark.unit
 def test_a_tool_serves_the_run_instrument_whatever_the_model_passes():
-    args = _run(tools.get_indicators, {"symbol": "RSI", "indicator": "rsi", "curr_date": TRADE_DATE}, tools)
+    args = _run(
+        tools.get_indicators, {"symbol": "RSI", "indicator": "rsi", "curr_date": TRADE_DATE}, tools
+    )
     assert args[1] == "NVDA"
 
 
@@ -102,11 +120,15 @@ def _run(tool, args, module):
     graph.add_edge(START, "tools")
     graph.add_edge("tools", END)
     with mock.patch.object(module, "route_to_vendor", return_value="ok") as routed:
-        graph.compile().invoke({
-            "messages": [AIMessage("", tool_calls=[{"name": tool.name, "args": args, "id": "1"}])],
-            "trade_date": TRADE_DATE,
-            "company_of_interest": "NVDA",
-        })
+        graph.compile().invoke(
+            {
+                "messages": [
+                    AIMessage("", tool_calls=[{"name": tool.name, "args": args, "id": "1"}])
+                ],
+                "trade_date": TRADE_DATE,
+                "company_of_interest": "NVDA",
+            }
+        )
     return routed.call_args.args
 
 
@@ -141,7 +163,9 @@ def test_a_start_date_that_is_not_a_date_is_sent_back_to_the_model(tool):
     # A model can append a stray character to a date (#1476). No window can be
     # guessed from it, so the vendor is not called and the model is told the form.
     with mock.patch.object(tools, "route_to_vendor", return_value="ok") as routed:
-        out = getattr(tools, tool).func("NVDA", "2026-09-26\u0629", "2026-10-03", trade_date="2026-10-03")
+        out = getattr(tools, tool).func(
+            "NVDA", "2026-09-26\u0629", "2026-10-03", trade_date="2026-10-03"
+        )
     assert not routed.called
     assert "YYYY-MM-DD" in out and "start_date" in out
 
@@ -153,6 +177,7 @@ def test_a_window_whose_start_is_not_a_date_is_refused():
 
 
 # --- the run date itself (#1319) -------------------------------------------------
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize("bad", ["2026-9-10", "2026-09-10 00:00", "Sept 10", None])

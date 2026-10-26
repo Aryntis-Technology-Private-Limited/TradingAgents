@@ -250,7 +250,7 @@ class TestTraderAgent:
         user = " ".join(m["content"] for m in captured["prompt"] if m["role"] == "user")
         system = " ".join(m["content"] for m in captured["prompt"] if m["role"] == "system")
         assert "Technical Market Report:" in user
-        assert "14-day ATR 4.2" in user            # the actual report content reached the Trader
+        assert "14-day ATR 4.2" in user  # the actual report content reached the Trader
         assert "support $178, resistance $196" in user
         assert "Ground concrete price levels" in system
 
@@ -268,8 +268,7 @@ class TestTraderAgent:
 
     def test_falls_back_to_freetext_when_structured_unavailable(self):
         plain_response = (
-            "**Action**: Sell\n\nGuidance cut hits margins.\n\n"
-            "FINAL TRANSACTION PROPOSAL: **SELL**"
+            "**Action**: Sell\n\nGuidance cut hits margins.\n\nFINAL TRANSACTION PROPOSAL: **SELL**"
         )
         llm = MagicMock()
         llm.with_structured_output.side_effect = NotImplementedError("provider unsupported")
@@ -305,9 +304,7 @@ def _structured_rm_llm(captured: dict, plan: ResearchPlan | None = None):
             strategic_actions="Hold current position; reassess after earnings.",
         )
     structured = MagicMock()
-    structured.invoke.side_effect = lambda prompt: (
-        captured.__setitem__("prompt", prompt) or plan
-    )
+    structured.invoke.side_effect = lambda prompt: captured.__setitem__("prompt", prompt) or plan
     llm = MagicMock()
     llm.with_structured_output.return_value = structured
     return llm
@@ -341,7 +338,9 @@ class TestResearchManagerAgent:
             assert f"**{tier}**" in prompt, f"missing {tier} in prompt"
 
     def test_falls_back_to_freetext_when_structured_unavailable(self):
-        plain_response = "**Recommendation**: Sell\n\n**Rationale**: ...\n\n**Strategic Actions**: ..."
+        plain_response = (
+            "**Recommendation**: Sell\n\n**Rationale**: ...\n\n**Strategic Actions**: ..."
+        )
         llm = MagicMock()
         llm.with_structured_output.side_effect = NotImplementedError("provider unsupported")
         llm.invoke.return_value = MagicMock(content=plain_response)
@@ -390,16 +389,20 @@ class TestRenderSentimentReport:
     def test_all_six_bands_render(self):
         for band in SentimentBand:
             report = SentimentReport(
-                overall_band=band, overall_score=5.0,
-                confidence="medium", narrative="n",
+                overall_band=band,
+                overall_score=5.0,
+                confidence="medium",
+                narrative="n",
             )
             assert band.value in render_sentiment_report(report)
 
     def test_score_out_of_range_rejected(self):
         with pytest.raises(ValidationError):
             SentimentReport(
-                overall_band=SentimentBand.BULLISH, overall_score=11.0,
-                confidence="high", narrative="n",
+                overall_band=SentimentBand.BULLISH,
+                overall_score=11.0,
+                confidence="high",
+                narrative="n",
             )
 
 
@@ -417,14 +420,13 @@ def _structured_sentiment_llm(captured: dict, report: SentimentReport | None = N
     a real SentimentReport so render_sentiment_report works."""
     if report is None:
         report = SentimentReport(
-            overall_band=SentimentBand.BULLISH, overall_score=7.5,
+            overall_band=SentimentBand.BULLISH,
+            overall_score=7.5,
             confidence="high",
             narrative="StockTwits 75% bullish. News constructive. Reddit upbeat.",
         )
     structured = MagicMock()
-    structured.invoke.side_effect = lambda prompt: (
-        captured.__setitem__("prompt", prompt) or report
-    )
+    structured.invoke.side_effect = lambda prompt: captured.__setitem__("prompt", prompt) or report
     llm = MagicMock()
     llm.with_structured_output.return_value = structured
     return llm
@@ -450,8 +452,10 @@ class TestSentimentAnalystAgent:
     def test_structured_path_produces_rendered_markdown(self):
         captured = {}
         report = SentimentReport(
-            overall_band=SentimentBand.MILDLY_BEARISH, overall_score=4.0,
-            confidence="medium", narrative="Mixed signals across sources.",
+            overall_band=SentimentBand.MILDLY_BEARISH,
+            overall_score=4.0,
+            confidence="medium",
+            narrative="Mixed signals across sources.",
         )
         analyst = create_sentiment_analyst(_structured_sentiment_llm(captured, report))
         sr = analyst(_make_sentiment_state())["sentiment_report"]
@@ -489,19 +493,34 @@ class TestSentimentAnalystAgent:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("source", [
-    pytest.param(lambda: ResearchPlan.model_fields["recommendation"].description, id="ResearchPlan.recommendation"),
-    pytest.param(lambda: PortfolioDecision.model_fields["rating"].description, id="PortfolioDecision.rating"),
-    pytest.param(lambda: inspect.getsource(create_research_manager), id="research_manager prompt"),
-    pytest.param(lambda: inspect.getsource(create_portfolio_manager), id="portfolio_manager prompt"),
-])
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            lambda: ResearchPlan.model_fields["recommendation"].description,
+            id="ResearchPlan.recommendation",
+        ),
+        pytest.param(
+            lambda: PortfolioDecision.model_fields["rating"].description,
+            id="PortfolioDecision.rating",
+        ),
+        pytest.param(
+            lambda: inspect.getsource(create_research_manager), id="research_manager prompt"
+        ),
+        pytest.param(
+            lambda: inspect.getsource(create_portfolio_manager), id="portfolio_manager prompt"
+        ),
+    ],
+)
 def test_conflict_alone_is_not_a_hold_trigger(source):
     # The debate always contains conflicting arguments, so a Hold condition that
     # conflict satisfies fires on every run and swallows directional calls
     # (#1321). All four decision sites must state the same rule.
     text = " ".join(source().split())
-    assert "conflict alone is not a reason to Hold" in text or \
-        "Conflicting arguments alone are not a reason to Hold" in text
+    assert (
+        "conflict alone is not a reason to Hold" in text
+        or "Conflicting arguments alone are not a reason to Hold" in text
+    )
     assert "materially conflicting" not in text
 
 
@@ -513,8 +532,12 @@ def test_a_price_written_as_a_range_drops_only_that_field(written):
     losing every other field the model got right."""
     from tradingagents.agents.schemas import PortfolioDecision, PortfolioRating
 
-    decision = PortfolioDecision(rating=PortfolioRating.BUY, executive_summary="s",
-                                 investment_thesis="t", price_target=written)
+    decision = PortfolioDecision(
+        rating=PortfolioRating.BUY,
+        executive_summary="s",
+        investment_thesis="t",
+        price_target=written,
+    )
     assert decision.price_target is None
 
 
@@ -522,8 +545,12 @@ def test_a_price_written_as_a_range_drops_only_that_field(written):
 def test_a_price_that_is_a_number_survives():
     from tradingagents.agents.schemas import PortfolioDecision, PortfolioRating
 
-    decision = PortfolioDecision(rating=PortfolioRating.BUY, executive_summary="s",
-                                 investment_thesis="t", price_target="$1,150.25")
+    decision = PortfolioDecision(
+        rating=PortfolioRating.BUY,
+        executive_summary="s",
+        investment_thesis="t",
+        price_target="$1,150.25",
+    )
     assert decision.price_target == 1150.25
 
 
@@ -532,8 +559,9 @@ def test_a_field_the_model_did_not_give_says_so():
     """An omitted line and a line never asked for read the same to an analyst."""
     from tradingagents.agents.schemas import PortfolioDecision, PortfolioRating, render_pm_decision
 
-    rendered = render_pm_decision(PortfolioDecision(
-        rating=PortfolioRating.HOLD, executive_summary="s", investment_thesis="t"))
+    rendered = render_pm_decision(
+        PortfolioDecision(rating=PortfolioRating.HOLD, executive_summary="s", investment_thesis="t")
+    )
     assert "Price Target" in rendered and "not provided" in rendered.lower()
 
 

@@ -4,6 +4,7 @@ The prompt used to advertise ``get_news(query, ...)``, tricking the LLM into
 hallucinating free-text query calls. The instrument now comes from the run's
 state, so the model passes only the window.
 """
+
 import inspect
 
 import pytest

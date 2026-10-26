@@ -6,6 +6,7 @@ unbounded reasoning/output and hang or trip an idle timeout. An opt-in
 Gemini names the parameter ``max_output_tokens``, so it is forwarded under the
 right key per provider.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -83,10 +84,12 @@ def test_invalid_value_fails_loudly():
 
 # --- client-side allowlists carry the kwarg --------------------------------
 
+
 @pytest.mark.unit
 def test_openai_and_google_clients_accept_the_kwarg():
     from tradingagents.llm_clients import openai_client
     from tradingagents.llm_clients.google_client import GoogleClient  # noqa: F401
+
     assert "max_tokens" in openai_client._PASSTHROUGH_KWARGS
     # Google client forwards max_output_tokens through construction.
     llm = GoogleClient("gemini-3.5-flash", api_key="x", max_output_tokens=8192).get_llm()
@@ -94,6 +97,7 @@ def test_openai_and_google_clients_accept_the_kwarg():
 
 
 # --- env overlay -----------------------------------------------------------
+
 
 def _config_with_env(monkeypatch, **overrides):
     """The defaults as the environment given here would set them."""

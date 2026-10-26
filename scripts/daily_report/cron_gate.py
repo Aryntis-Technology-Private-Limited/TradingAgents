@@ -41,14 +41,14 @@ holidays are maintained in the JSON file above, also without a rebuild. See
 scripts/daily_report/config.py for the full key list.
 """
 
+import os
 import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from scripts.daily_report import config as daily_config
-from scripts.daily_report import exchange_holidays
+from scripts.daily_report import config as daily_config, exchange_holidays
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -64,17 +64,29 @@ def _trading_day(iso_date: str) -> bool:
 
 
 def _hour() -> int:
+    """DAILY_REPORT_HOUR, validated up front so a bad value fails loud
+    with the offending value named, instead of an opaque SystemExit.
+    A misconfigured hour is a setup error, not a dataflow exception to
+    chain."""
     try:
         return daily_config.hour()
-    except ValueError as exc:
-        raise SystemExit(str(exc))
+    except ValueError:
+        raise SystemExit(
+            f"invalid DAILY_REPORT_HOUR: {os.environ.get('DAILY_REPORT_HOUR', '')!r}"
+        ) from None
 
 
 def _until() -> datetime:
+    """DAILY_REPORT_UNTIL, validated up front so a bad value fails loud
+    with the offending value named, instead of an opaque SystemExit.
+    A misconfigured stop date is a setup error, not a dataflow
+    exception to chain."""
     try:
         return datetime.strptime(daily_config.until(), "%Y-%m-%d")
-    except ValueError as exc:
-        raise SystemExit(str(exc))
+    except ValueError:
+        raise SystemExit(
+            f"invalid DAILY_REPORT_UNTIL: {os.environ.get('DAILY_REPORT_UNTIL', '')!r}"
+        ) from None
 
 
 def _fire_sweep() -> int:
@@ -89,8 +101,10 @@ def _fire_sweep() -> int:
 def _fire_digest() -> int:
     """Run the digest PDF once; return its exit code. Called immediately
     after the sweep so it reads a just-completed day's reports."""
-    print(f"[cron-gate] {datetime.now():%Y-%m-%d %H:%M:%S} firing digest "
-          f"(sweep just completed)", flush=True)
+    print(
+        f"[cron-gate] {datetime.now():%Y-%m-%d %H:%M:%S} firing digest (sweep just completed)",
+        flush=True,
+    )
     return subprocess.call(
         [sys.executable, "-m", "scripts.daily_report.digest"],
         cwd=ROOT,
@@ -119,8 +133,9 @@ def _next_fire(now: datetime, hour: int) -> datetime:
     while not _trading_day(day.isoformat()):
         label = exchange_holidays.holiday_label(day.isoformat())
         reason = f"declared holiday ({label})" if label else "weekend"
-        print(f"[cron-gate] {day.isoformat()} is not a trading day ({reason}); skipping",
-              flush=True)
+        print(
+            f"[cron-gate] {day.isoformat()} is not a trading day ({reason}); skipping", flush=True
+        )
         day += timedelta(days=1)
         candidate = datetime(day.year, day.month, day.day, hour, 0, 0)
     return candidate
@@ -142,13 +157,19 @@ def main() -> int:
 
         next_fire = _next_fire(now, hour)
         if next_fire.date() > until.date():
-            print(f"[cron-gate] next fire {next_fire:%Y-%m-%d} is past "
-                  f"DAILY_REPORT_UNTIL ({until.date()}); exiting", flush=True)
+            print(
+                f"[cron-gate] next fire {next_fire:%Y-%m-%d} is past "
+                f"DAILY_REPORT_UNTIL ({until.date()}); exiting",
+                flush=True,
+            )
             return 0
 
         wait = (next_fire - now).total_seconds()
-        print(f"[cron-gate] next fire (sweep+digest) at {next_fire:%Y-%m-%d %H:%M} "
-              f"(in {wait/3600:.1f}h), stop after {until.date()}", flush=True)
+        print(
+            f"[cron-gate] next fire (sweep+digest) at {next_fire:%Y-%m-%d %H:%M} "
+            f"(in {wait / 3600:.1f}h), stop after {until.date()}",
+            flush=True,
+        )
         time.sleep(max(wait, 1.0))
 
         # The sleep can overshoot the boundary by seconds; only fire if the
@@ -159,8 +180,10 @@ def main() -> int:
         if not _trading_day(iso):
             label = exchange_holidays.holiday_label(iso)
             reason = f"declared holiday ({label})" if label else "weekend"
-            print(f"[cron-gate] {iso} is not a trading day ({reason}); "
-                  f"waiting for the next one", flush=True)
+            print(
+                f"[cron-gate] {iso} is not a trading day ({reason}); waiting for the next one",
+                flush=True,
+            )
             continue
         _fire()
 
